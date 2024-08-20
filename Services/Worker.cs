@@ -7,20 +7,16 @@ namespace PrintService.Services;
 public class Worker : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
-    private readonly IConfiguration _config;
-    public Worker(ILogger<Worker> logger, IConfiguration config)
+    private readonly RedisClient _redisClient;
+    public Worker(ILogger<Worker> logger, RedisClient redisClient)
     {
         _logger = logger;
-        _config = config;
-        _connection = ConnectionMultiplexer.Connect(_config.GetConnectionString("Redis") ?? "localhost:6379");
+        _redisClient = redisClient;
     }
-
-    private readonly ConnectionMultiplexer _connection;
-    private static readonly RedisChannel channel = new RedisChannel("test-channel", RedisChannel.PatternMode.Auto);
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var subscriber = _connection.GetSubscriber();
+        var subscriber = await _redisClient.GetSubscriber();
+        RedisChannel channel = new RedisChannel($"print:1:1", RedisChannel.PatternMode.Auto);
 
         while (!stoppingToken.IsCancellationRequested)
         {

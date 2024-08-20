@@ -1,5 +1,6 @@
 using System.Text.Json;
-using ESCPOS_NET.Emitters;
+using Microsoft.Extensions.Options;
+using PrintService.Config;
 using StackExchange.Redis;
 
 namespace PrintService.Services;
@@ -8,22 +9,20 @@ public class Subscriber : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
     private readonly Printer _printer;
-    private readonly IConfiguration _config;
+    private readonly RedisClient _redisClient;
+    private readonly PrinterConfig _printerConfig;
 
-    public Subscriber(ILogger<Worker> logger, IConfiguration config, Printer printer)
+    public Subscriber(ILogger<Worker> logger, RedisClient redisClient, Printer printer, IOptions<PrinterConfig> printerConfig)
     {
         _logger = logger;
-        _config = config;
-        _connection = ConnectionMultiplexer.Connect(_config.GetConnectionString("Redis") ?? "localhost:6379");
+        _redisClient = redisClient;
         _printer = printer;
+        _printerConfig = printerConfig.Value;
     }
-
-    private readonly ConnectionMultiplexer _connection;
-    private static readonly RedisChannel channel = new RedisChannel("test-channel", RedisChannel.PatternMode.Auto);
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var subscriber = _connection.GetSubscriber();
+        RedisChannel channel = new RedisChannel($"print:{_printerConfig.OutletId}:{_printerConfig.PrinterId}", RedisChannel.PatternMode.Auto);
+        var subscriber = await _redisClient.GetSubscriber();
 
         await subscriber.SubscribeAsync(channel, (channel, message) =>
         {

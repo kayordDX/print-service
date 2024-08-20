@@ -1,7 +1,6 @@
 using System.Text.Json;
 using ESCPOS_NET;
 using ESCPOS_NET.Emitters;
-using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using PrintService.Config;
 using PrintService.DTO;
@@ -11,17 +10,17 @@ namespace PrintService.Services;
 public class Printer
 {
     private readonly ILogger<Printer> _logger;
-    private readonly IDistributedCache _cache;
     private readonly PrinterConfig _printerConfig;
+    private readonly RedisClient _redisClient;
     private static readonly FilePrinter printer = new FilePrinter(filePath: "/dev/usb/lp0");
     private static readonly EPSON e = new EPSON();
     private static PrinterStatusEventArgs? lastStatus = null;
     private static Queue<List<byte[]>> printQueue = new();
     private static bool isPrinting = false;
-    public Printer(ILogger<Printer> logger, IDistributedCache cache, IOptions<PrinterConfig> printerConfig)
+    public Printer(ILogger<Printer> logger, IOptions<PrinterConfig> printerConfig, RedisClient redisClient)
     {
         _logger = logger;
-        _cache = cache;
+        _redisClient = redisClient;
         _printerConfig = printerConfig.Value;
         printer.StatusChanged += StatusChanged;
         printer.Write(e.Initialize());
@@ -53,9 +52,8 @@ public class Printer
             }
             else
             {
-                foreach (var printItem in printQueue)
+                while (printQueue.Count() > 0)
                 {
-
                     isPrinting = true;
                     var body = printQueue.Dequeue();
                     foreach (var row in body)
@@ -92,10 +90,14 @@ public class Printer
             PrinterStatusEventArgs = status,
             PrinterConfig = _printerConfig
         };
-        string value = JsonSerializer.Serialize(printerStatus);
-        string key = $"printer-{_printerConfig.OutletId}-{_printerConfig.PrinterId}";
-        _cache.SetString(key, value);
+        string key = $"printer:{_printerConfig.OutletId}:{_printerConfig.PrinterId}";
+        SaveStatusToRedis(key, printerStatus).ConfigureAwait(false);
         _logger.LogInformation("Printer Online Status: {status}", status.IsPrinterOnline);
         Print();
+    }
+
+    private async Task SaveStatusToRedis(string key, PrinterStatus printerStatus)
+    {
+        await _redisClient.SetObjectAsync(key, printerStatus);
     }
 }
