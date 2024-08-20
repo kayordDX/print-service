@@ -4,7 +4,7 @@ EXPOSE 5013
 
 ENV ASPNETCORE_URLS=http://+:5013
 
-USER app
+USER root
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 ARG configuration=Release
 WORKDIR /src
