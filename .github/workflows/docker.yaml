@@ -29,4 +29,4 @@ jobs:
         with:
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: kayordDX/print-service:latest, kayordDX/print-service:${{ github.sha }}
+          tags: ghcr.io/kayordDX/print-service:latest, ghcr.io/kayordDX/print-service:${{ github.sha }}
