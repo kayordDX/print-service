@@ -5,7 +5,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Host.AddLoggingConfiguration(builder.Configuration);
 builder.Services.ConfigureConfig(builder.Configuration);
 builder.Services.ConfigureRedis(builder.Configuration);
-
+builder.Services.AddHostedService<PrinterCheck>();
 builder.Services.AddHostedService<PrinterBackground>();
 builder.Services.AddHostedService<Subscriber>();
 builder.Services.AddSingleton<Printer>();

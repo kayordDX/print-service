@@ -11,7 +11,7 @@ public class Printer
     private readonly ILogger<Printer> _logger;
     private readonly PrinterConfig _printerConfig;
     private readonly RedisClient _redisClient;
-    private readonly FilePrinter printer;
+    private static FilePrinter? printer;
     private static readonly EPSON e = new EPSON();
     private static Queue<List<byte[]>> printQueue = new();
     private static bool isPrinting = false;
@@ -20,30 +20,69 @@ public class Printer
         _logger = logger;
         _redisClient = redisClient;
         _printerConfig = printerConfig.Value;
-        printer = new FilePrinter(filePath: _printerConfig.FilePath);
-        printer.StatusChanged += StatusChanged;
-        printer.Connected += Connected;
-        printer.Disconnected += Disconnected;
-        printer.Write(e.Initialize());
-        printer.Write(e.Enable());
-        printer.Write(e.EnableAutomaticStatusBack());
+        InitPrinter();
     }
 
-    public PrinterStatusEventArgs GetStatus()
+    private void InitPrinter()
     {
-        return printer.Status;
+        try
+        {
+            printer = new FilePrinter(filePath: _printerConfig.FilePath);
+            printer.StatusChanged += StatusChanged;
+            printer.Connected += Connected;
+            printer.Disconnected += Disconnected;
+            printer.Write(e.Initialize());
+            printer.Write(e.Enable());
+            printer.Write(e.EnableAutomaticStatusBack());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Could not initialize printer {ex}", ex);
+        }
+    }
+
+    public PrinterStatusEventArgs? GetStatus()
+    {
+        return printer?.Status;
+    }
+
+    public async Task<bool> PrinterCheck()
+    {
+        _logger.LogDebug("Checking");
+        bool checkResult = true;
+        bool noPrintPath = !File.Exists(_printerConfig.FilePath);
+        bool noPrinter = printer == null;
+        bool shouldRefresh = false;
+
+        if ((noPrintPath || noPrinter) && GetStatus() != null)
+        {
+            shouldRefresh = true;
+        }
+
+        if (noPrintPath)
+        {
+            checkResult = false;
+            _logger.LogError("Print File Path not found");
+            printer?.Dispose();
+            printer = null;
+        }
+        if (noPrinter)
+        {
+            checkResult = false;
+            InitPrinter();
+        }
+
+        if (shouldRefresh)
+        {
+            await RefreshStatusAsync();
+        }
+        return checkResult;
     }
 
     public async Task RefreshStatusAsync()
     {
-        _logger.LogInformation("Refreshing");
+        _logger.LogDebug("Refreshing");
         var status = GetStatus();
-        if (status == null)
-        {
-            _logger.LogError("Status was null - unable to read status from printer.");
-            return;
-        }
-
         PrinterStatus printerStatus = new()
         {
             DateUpdated = DateTime.Now,
@@ -79,14 +118,14 @@ public class Printer
                     var body = printQueue.Dequeue();
                     foreach (var row in body)
                     {
-                        printer.Write(row);
+                        printer?.Write(row);
                     }
                 }
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex.Message);
+            _logger.LogError("Print error {error}", ex);
         }
         finally
         {
@@ -98,12 +137,6 @@ public class Printer
     {
         _logger.LogDebug("StatusChanged");
         var status = (PrinterStatusEventArgs)ps;
-        if (status == null)
-        {
-            _logger.LogError("Status was null - unable to read status from printer.");
-            return;
-        }
-
         PrinterStatus printerStatus = new()
         {
             DateUpdated = DateTime.Now,

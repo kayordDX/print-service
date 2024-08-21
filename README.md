@@ -17,13 +17,16 @@ services:
     image: ghcr.io/kayorddx/print-service:latest
     environment:
       ConnectionStrings:Redis: localhost,password=P@ss,ssl=False,abortConnect=False
-      ASPNETCORE_Printer:OutletId: 1
-      ASPNETCORE_Printer:PrinterId: 1
-      ASPNETCORE_Printer:Name: Main Printer
-      # ASPNETCORE_Printer:FilePath: /dev/usb/lp0    
-      # ASPNETCORE_Serilog__MinimumLevel: Debug
+      Printer:OutletId: 1
+      Printer:PrinterId: 1
+      Printer:Name: Main Printer
+      Printer:RedisRefreshSec: 300
+      Printer:StatusInitCheckSec: 300
+      Printer:StatusCheckSec: 300
+      Printer:FilePath: /dev/usb/lp0    
+      Serilog__MinimumLevel: Debug
     devices:
-      - /dev/usb/lp0:/dev/usb/lp0
+      - /dev/usb/:/dev/usb/
     restart: unless-stopped
     privileged: true
 ```
