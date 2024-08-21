@@ -8,7 +8,8 @@
 		"ghcr.io/devcontainers/features/dotnet:2": {}
 	},
 	"mounts": [
-		"type=bind,source=/dev/usb/lp0,target=/dev/usb/lp0"
+		// "type=bind,source=/dev/usb/lp0,target=/dev/usb/lp0"
+		"type=bind,source=/dev/usb/,target=/dev/usb/"
 	],
 	"runArgs": [
 		"--privileged"

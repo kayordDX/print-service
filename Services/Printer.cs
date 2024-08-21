@@ -22,6 +22,8 @@ public class Printer
         _printerConfig = printerConfig.Value;
         printer = new FilePrinter(filePath: _printerConfig.FilePath);
         printer.StatusChanged += StatusChanged;
+        printer.Connected += Connected;
+        printer.Disconnected += Disconnected;
         printer.Write(e.Initialize());
         printer.Write(e.Enable());
         printer.Write(e.EnableAutomaticStatusBack());
@@ -94,6 +96,7 @@ public class Printer
 
     private void StatusChanged(object? sender, EventArgs ps)
     {
+        _logger.LogDebug("StatusChanged");
         var status = (PrinterStatusEventArgs)ps;
         if (status == null)
         {
@@ -108,8 +111,16 @@ public class Printer
             PrinterConfig = _printerConfig
         };
         SaveStatusToRedisAsync(printerStatus).ConfigureAwait(false);
-        _logger.LogInformation("Printer Online Status: {status}", status.IsPrinterOnline);
         Print();
+    }
+
+    private void Connected(object? sender, EventArgs e)
+    {
+        _logger.LogDebug("Connected");
+    }
+    private void Disconnected(object? sender, EventArgs ps)
+    {
+        _logger.LogDebug("Disconnected");
     }
 
     private async Task SaveStatusToRedisAsync(PrinterStatus printerStatus)

@@ -20,7 +20,8 @@ services:
       ASPNETCORE_Printer:OutletId: 1
       ASPNETCORE_Printer:PrinterId: 1
       ASPNETCORE_Printer:Name: Main Printer
-      # ASPNETCORE_Printer:FilePath: /dev/usb/lp0      
+      # ASPNETCORE_Printer:FilePath: /dev/usb/lp0    
+      # ASPNETCORE_Serilog__MinimumLevel: Debug
     devices:
       - /dev/usb/lp0:/dev/usb/lp0
     restart: unless-stopped
