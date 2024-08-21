@@ -6,7 +6,7 @@ builder.Host.AddLoggingConfiguration(builder.Configuration);
 builder.Services.ConfigureConfig(builder.Configuration);
 builder.Services.ConfigureRedis(builder.Configuration);
 
-// builder.Services.AddHostedService<Worker>();
+builder.Services.AddHostedService<PrinterBackground>();
 builder.Services.AddHostedService<Subscriber>();
 builder.Services.AddSingleton<Printer>();
 builder.Services.ConfigureSubscriber(builder.Configuration);

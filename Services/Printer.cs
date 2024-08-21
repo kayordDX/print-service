@@ -1,4 +1,3 @@
-using System.Text.Json;
 using ESCPOS_NET;
 using ESCPOS_NET.Emitters;
 using Microsoft.Extensions.Options;
@@ -12,9 +11,8 @@ public class Printer
     private readonly ILogger<Printer> _logger;
     private readonly PrinterConfig _printerConfig;
     private readonly RedisClient _redisClient;
-    private static readonly FilePrinter printer = new FilePrinter(filePath: "/dev/usb/lp0");
+    private readonly FilePrinter printer;
     private static readonly EPSON e = new EPSON();
-    private static PrinterStatusEventArgs? lastStatus = null;
     private static Queue<List<byte[]>> printQueue = new();
     private static bool isPrinting = false;
     public Printer(ILogger<Printer> logger, IOptions<PrinterConfig> printerConfig, RedisClient redisClient)
@@ -22,15 +20,35 @@ public class Printer
         _logger = logger;
         _redisClient = redisClient;
         _printerConfig = printerConfig.Value;
+        printer = new FilePrinter(filePath: _printerConfig.FilePath);
         printer.StatusChanged += StatusChanged;
         printer.Write(e.Initialize());
         printer.Write(e.Enable());
         printer.Write(e.EnableAutomaticStatusBack());
     }
 
-    public PrinterStatusEventArgs? GetStatus()
+    public PrinterStatusEventArgs GetStatus()
     {
-        return lastStatus;
+        return printer.Status;
+    }
+
+    public async Task RefreshStatusAsync()
+    {
+        _logger.LogInformation("Refreshing");
+        var status = GetStatus();
+        if (status == null)
+        {
+            _logger.LogError("Status was null - unable to read status from printer.");
+            return;
+        }
+
+        PrinterStatus printerStatus = new()
+        {
+            DateUpdated = DateTime.Now,
+            PrinterStatusEventArgs = status,
+            PrinterConfig = _printerConfig
+        };
+        await SaveStatusToRedisAsync(printerStatus);
     }
 
     public void PrintQueue(List<byte[]> body)
@@ -42,13 +60,14 @@ public class Printer
     private void Print()
     {
         if (isPrinting) return;
-        if (lastStatus == null) return;
+        var status = GetStatus();
+        if (status == null) return;
 
         try
         {
-            if (!(lastStatus.IsPrinterOnline ?? false) || (lastStatus.IsInErrorState ?? false))
+            if (!(status.IsPrinterOnline ?? false) || (status.IsInErrorState ?? false))
             {
-                _logger.LogInformation("Printer not ready: IsOnline: {isOnline}, isErrorState: {errorState}", lastStatus.IsPrinterOnline, lastStatus.IsInErrorState);
+                _logger.LogInformation("Printer not ready: IsOnline: {isOnline}, isErrorState: {errorState}", status.IsPrinterOnline, status.IsInErrorState);
             }
             else
             {
@@ -78,11 +97,9 @@ public class Printer
         var status = (PrinterStatusEventArgs)ps;
         if (status == null)
         {
-            lastStatus = null;
             _logger.LogError("Status was null - unable to read status from printer.");
             return;
         }
-        lastStatus = status;
 
         PrinterStatus printerStatus = new()
         {
@@ -90,14 +107,14 @@ public class Printer
             PrinterStatusEventArgs = status,
             PrinterConfig = _printerConfig
         };
-        string key = $"printer:{_printerConfig.OutletId}:{_printerConfig.PrinterId}";
-        SaveStatusToRedis(key, printerStatus).ConfigureAwait(false);
+        SaveStatusToRedisAsync(printerStatus).ConfigureAwait(false);
         _logger.LogInformation("Printer Online Status: {status}", status.IsPrinterOnline);
         Print();
     }
 
-    private async Task SaveStatusToRedis(string key, PrinterStatus printerStatus)
+    private async Task SaveStatusToRedisAsync(PrinterStatus printerStatus)
     {
+        string key = $"printer:{_printerConfig.OutletId}:{_printerConfig.PrinterId}";
         await _redisClient.SetObjectAsync(key, printerStatus);
     }
 }
