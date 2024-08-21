@@ -1,3 +1,5 @@
+using CliWrap;
+using CliWrap.Buffered;
 using ESCPOS_NET;
 using ESCPOS_NET.Emitters;
 using Microsoft.Extensions.Options;
@@ -37,7 +39,7 @@ public class Printer
         }
         catch (Exception ex)
         {
-            _logger.LogError("Could not initialize printer {ex}", ex);
+            _logger.LogError("Could not initialize printer {ex}", ex.Message);
         }
     }
 
@@ -46,11 +48,38 @@ public class Printer
         return printer?.Status;
     }
 
+    private async Task<bool> GetPrinterFileStatus()
+    {
+        try
+        {
+            var result = await Cli.Wrap("/bin/cat")
+            .WithArguments(["/dev/usb/lp0"])
+            .WithValidation(CommandResultValidation.None)
+            .ExecuteBufferedAsync();
+
+            if (result.ExitCode == 0)
+            {
+                return true;
+            }
+            if (result.StandardError.Contains("Device or resource busy"))
+            {
+                return true;
+            }
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug("err {ex}", ex);
+            return false;
+        }
+    }
+
     public async Task<bool> PrinterCheck()
     {
         _logger.LogDebug("Checking");
         bool checkResult = true;
-        bool noPrintPath = !File.Exists(_printerConfig.FilePath);
+        var printFileStatus = await GetPrinterFileStatus();
+        bool noPrintPath = !printFileStatus;
         bool noPrinter = printer == null;
         bool shouldRefresh = false;
 
