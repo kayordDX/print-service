@@ -18,8 +18,8 @@ public class PrinterBackground : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            await Task.Delay(TimeSpan.FromSeconds(_printerConfig.RedisRefreshSec), stoppingToken);
             await _printer.RefreshStatusAsync();
+            await Task.Delay(TimeSpan.FromSeconds(_printerConfig.RedisRefreshSec), stoppingToken);
         }
     }
 }
