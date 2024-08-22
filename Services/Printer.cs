@@ -17,6 +17,7 @@ public class Printer
     private static readonly EPSON e = new EPSON();
     private static Queue<List<byte[]>> printQueue = new();
     private static bool isPrinting = false;
+    private static PrinterStatusEventArgs? lastSyncStatus = null;
     public Printer(ILogger<Printer> logger, IOptions<PrinterConfig> printerConfig, RedisClient redisClient)
     {
         _logger = logger;
@@ -84,6 +85,10 @@ public class Printer
         bool shouldRefresh = false;
 
         if ((noPrintPath || noPrinter) && GetStatus() != null)
+        {
+            shouldRefresh = true;
+        }
+        else if (GetStatus() != lastSyncStatus)
         {
             shouldRefresh = true;
         }
@@ -187,6 +192,7 @@ public class Printer
 
     private async Task SaveStatusToRedisAsync(PrinterStatus printerStatus)
     {
+        lastSyncStatus = printerStatus.PrinterStatusEventArgs;
         string key = $"printer:{_printerConfig.OutletId}:{_printerConfig.PrinterId}";
         await _redisClient.SetObjectAsync(key, printerStatus);
     }
