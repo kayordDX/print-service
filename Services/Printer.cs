@@ -78,6 +78,8 @@ public class Printer
     public async Task<bool> PrinterCheck()
     {
         _logger.LogDebug("Checking");
+        _logger.LogDebug("Status {status}", GetStatus());
+        _logger.LogDebug("LastSync {status}", lastSyncStatus);
         bool checkResult = true;
         var printFileStatus = await GetPrinterFileStatus();
         bool noPrintPath = !printFileStatus;
