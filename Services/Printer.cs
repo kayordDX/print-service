@@ -75,11 +75,28 @@ public class Printer
         }
     }
 
+    public bool ComparePrinterStatus(PrinterStatusEventArgs? first, PrinterStatusEventArgs? second)
+    {
+        if (first == null && second == null)
+        {
+            return first == second;
+        }
+        else if (first != null && second == null)
+        {
+            return false;
+        }
+        else if (first == null && second != null)
+        {
+            return false;
+        }
+        return first?.IsPrinterOnline == second?.IsPrinterOnline;
+    }
+
     public async Task<bool> PrinterCheck()
     {
         _logger.LogDebug("Checking");
-        _logger.LogDebug("Status {status}", GetStatus());
-        _logger.LogDebug("LastSync {status}", lastSyncStatus);
+        _logger.LogDebug("Status {status}", GetStatus()?.IsPrinterOnline);
+        _logger.LogDebug("LastSync {status}", lastSyncStatus?.IsPrinterOnline);
         bool checkResult = true;
         var printFileStatus = await GetPrinterFileStatus();
         bool noPrintPath = !printFileStatus;
@@ -90,7 +107,7 @@ public class Printer
         {
             shouldRefresh = true;
         }
-        else if (GetStatus() != lastSyncStatus)
+        else if (ComparePrinterStatus(GetStatus(), lastSyncStatus))
         {
             shouldRefresh = true;
         }
