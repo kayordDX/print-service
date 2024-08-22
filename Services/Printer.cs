@@ -119,7 +119,7 @@ public class Printer
         var status = GetStatus();
         PrinterStatus printerStatus = new()
         {
-            DateUpdated = DateTime.Now,
+            DateUpdated = DateTime.UtcNow,
             PrinterStatusEventArgs = status,
             PrinterConfig = _printerConfig
         };
@@ -173,7 +173,7 @@ public class Printer
         var status = (PrinterStatusEventArgs)ps;
         PrinterStatus printerStatus = new()
         {
-            DateUpdated = DateTime.Now,
+            DateUpdated = DateTime.UtcNow,
             PrinterStatusEventArgs = status,
             PrinterConfig = _printerConfig
         };
