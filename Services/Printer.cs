@@ -18,6 +18,7 @@ public class Printer
     private static Queue<List<byte[]>> printQueue = new();
     private static bool isPrinting = false;
     private static PrinterStatusEventArgs? lastSyncStatus = null;
+    private static Exception? lastException = null;
     public Printer(ILogger<Printer> logger, IOptions<PrinterConfig> printerConfig, RedisClient redisClient)
     {
         _logger = logger;
@@ -40,6 +41,7 @@ public class Printer
         }
         catch (Exception ex)
         {
+            lastException = ex;
             _logger.LogError("Could not initialize printer {ex}", ex.Message);
         }
     }
@@ -70,6 +72,7 @@ public class Printer
         }
         catch (Exception ex)
         {
+            lastException = ex;
             _logger.LogDebug("err {ex}", ex);
             return false;
         }
@@ -140,7 +143,8 @@ public class Printer
         {
             DateUpdated = DateTime.UtcNow,
             PrinterStatusEventArgs = status,
-            PrinterConfig = _printerConfig
+            PrinterConfig = _printerConfig,
+            lastException = (status == null) ? lastException : null
         };
         await SaveStatusToRedisAsync(printerStatus);
     }
@@ -178,6 +182,7 @@ public class Printer
         }
         catch (Exception ex)
         {
+            lastException = ex;
             _logger.LogError("Print error {error}", ex);
         }
         finally
@@ -189,12 +194,13 @@ public class Printer
     private void StatusChanged(object? sender, EventArgs ps)
     {
         _logger.LogDebug("StatusChanged");
-        var status = (PrinterStatusEventArgs)ps;
+        var status = (PrinterStatusEventArgs?)ps;
         PrinterStatus printerStatus = new()
         {
             DateUpdated = DateTime.UtcNow,
             PrinterStatusEventArgs = status,
-            PrinterConfig = _printerConfig
+            PrinterConfig = _printerConfig,
+            lastException = (status == null) ? lastException : null
         };
         SaveStatusToRedisAsync(printerStatus).ConfigureAwait(false);
         Print();
