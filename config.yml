@@ -1,0 +1,11 @@
+outletId: 993
+printers:
+  - printerId: 123
+    name: Main Printer asdf
+    filePath: /dev/usb/lp0
+    iPAddress: 10.0.0.8
+    port: 9100
+    isUsbPrinter: false
+    outletId: 993
+    redisRefreshSec: 300
+    statusCheckSec: 30

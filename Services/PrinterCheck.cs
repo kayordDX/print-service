@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Options;
 using PrintService.Config;
 
 namespace PrintService.Services;
@@ -6,27 +5,23 @@ namespace PrintService.Services;
 public class PrinterCheck : BackgroundService
 {
     private readonly ILogger<PrinterCheck> _logger;
-    private readonly Printer _printer;
-    private readonly PrinterConfig _printerConfig;
-    public PrinterCheck(ILogger<PrinterCheck> logger, Printer printer, IOptions<PrinterConfig> printerConfig)
+    private readonly Printers _printers;
+    private readonly PrintersConfig _printersConfig;
+    public PrinterCheck(ILogger<PrinterCheck> logger, Printers printers, Settings settings)
     {
         _logger = logger;
-        _printer = printer;
-        _printerConfig = printerConfig.Value;
+        _printers = printers;
+        _printersConfig = settings.GetPrintersConfig() ?? new PrintersConfig();
     }
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            if (_printer.GetStatus() == null)
+            await Task.Delay(TimeSpan.FromSeconds(_printersConfig.StatusCheckSec), stoppingToken);
+            foreach (var printer in _printers.printers)
             {
-                await Task.Delay(TimeSpan.FromSeconds(_printerConfig.StatusInitCheckSec), stoppingToken);
+                await printer.PrinterCheck();
             }
-            else
-            {
-                await Task.Delay(TimeSpan.FromSeconds(_printerConfig.StatusCheckSec), stoppingToken);
-            }
-            await _printer.PrinterCheck();
         }
     }
 }

@@ -6,7 +6,7 @@ public static class ConfigExtensions
 {
     public static IServiceCollection ConfigureConfig(this IServiceCollection services, IConfiguration configuration)
     {
-        services.Configure<PrinterConfig>(configuration.GetSection("Printer"));
+        services.Configure<MainConfig>(configuration.GetSection("Config"));
         return services;
     }
 }

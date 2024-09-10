@@ -30,3 +30,9 @@ services:
     restart: unless-stopped
     privileged: true
 ```
+
+## Find Devices in network
+
+```bash
+nmap -sn 192.168.1.*
+```

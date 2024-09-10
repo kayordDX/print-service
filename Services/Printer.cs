@@ -2,7 +2,6 @@ using CliWrap;
 using CliWrap.Buffered;
 using ESCPOS_NET;
 using ESCPOS_NET.Emitters;
-using Microsoft.Extensions.Options;
 using PrintService.Config;
 using PrintService.DTO;
 
@@ -12,18 +11,25 @@ public class Printer
 {
     private readonly ILogger<Printer> _logger;
     private readonly PrinterConfig _printerConfig;
+    private readonly PrintersConfig? _printersConfig;
     private readonly RedisClient _redisClient;
-    private static FilePrinter? printer;
+    private static BasePrinter? printer;
     private static readonly EPSON e = new EPSON();
     private static Queue<List<byte[]>> printQueue = new();
     private static bool isPrinting = false;
     private static PrinterStatusEventArgs? lastSyncStatus = null;
     private static Exception? lastException = null;
-    public Printer(ILogger<Printer> logger, IOptions<PrinterConfig> printerConfig, RedisClient redisClient)
+    public int PrinterId { get; set; }
+
+    public Printer(ILogger<Printer> logger, PrinterConfig printerConfig, RedisClient redisClient, PrintersConfig? printersConfig)
     {
+        var test = _printerConfig?.PrinterId;
+
         _logger = logger;
         _redisClient = redisClient;
-        _printerConfig = printerConfig.Value;
+        _printerConfig = printerConfig;
+        _printersConfig = printersConfig;
+        PrinterId = _printerConfig.PrinterId;
         InitPrinter();
     }
 
@@ -31,7 +37,15 @@ public class Printer
     {
         try
         {
-            printer = new FilePrinter(filePath: _printerConfig.FilePath);
+            if (_printerConfig?.IsUsbPrinter ?? false)
+            {
+
+                printer = new FilePrinter(filePath: _printerConfig.FilePath);
+            }
+            else
+            {
+                printer = new NetworkPrinter(new NetworkPrinterSettings { ConnectionString = $"{_printerConfig?.IPAddress}:{_printerConfig?.Port}", PrinterName = _printerConfig?.Name });
+            }
             printer.StatusChanged += StatusChanged;
             printer.Connected += Connected;
             printer.Disconnected += Disconnected;
@@ -101,7 +115,12 @@ public class Printer
         _logger.LogDebug("Status {status}", GetStatus()?.IsPrinterOnline);
         _logger.LogDebug("LastSync {status}", lastSyncStatus?.IsPrinterOnline);
         bool checkResult = true;
-        var printFileStatus = await GetPrinterFileStatus();
+        bool printFileStatus = true;
+        if (_printerConfig?.IsUsbPrinter ?? false)
+        {
+            printFileStatus = await GetPrinterFileStatus();
+        }
+
         bool noPrintPath = !printFileStatus;
         bool noPrinter = printer == null;
         bool shouldRefresh = false;
@@ -144,7 +163,7 @@ public class Printer
             DateUpdated = DateTime.UtcNow,
             PrinterStatusEventArgs = status,
             PrinterConfig = _printerConfig,
-            lastException = (status == null) ? lastException : null
+            LastException = (status == null) ? lastException?.Message : null
         };
         await SaveStatusToRedisAsync(printerStatus);
     }
@@ -200,7 +219,7 @@ public class Printer
             DateUpdated = DateTime.UtcNow,
             PrinterStatusEventArgs = status,
             PrinterConfig = _printerConfig,
-            lastException = (status == null) ? lastException : null
+            LastException = (status == null) ? lastException?.Message : null
         };
         SaveStatusToRedisAsync(printerStatus).ConfigureAwait(false);
         Print();
@@ -218,7 +237,7 @@ public class Printer
     private async Task SaveStatusToRedisAsync(PrinterStatus printerStatus)
     {
         lastSyncStatus = printerStatus.PrinterStatusEventArgs;
-        string key = $"printer:{_printerConfig.OutletId}:{_printerConfig.PrinterId}";
+        string key = $"printer:{_printersConfig?.OutletId}:{_printerConfig.PrinterId}";
         await _redisClient.SetObjectAsync(key, printerStatus);
     }
 }
