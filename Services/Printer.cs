@@ -70,9 +70,9 @@ public class Printer
         try
         {
             var result = await Cli.Wrap("/bin/cat")
-            .WithArguments(["/dev/usb/lp0"])
-            .WithValidation(CommandResultValidation.None)
-            .ExecuteBufferedAsync();
+                .WithArguments(["/dev/usb/lp0"])
+                .WithValidation(CommandResultValidation.None)
+                .ExecuteBufferedAsync();
 
             if (result.ExitCode == 0)
             {
@@ -120,6 +120,15 @@ public class Printer
         {
             printFileStatus = await GetPrinterFileStatus();
         }
+        else
+        {
+            if (GetStatus() == null)
+            {
+                _logger.LogDebug("No status disposing printer");
+                printer?.Dispose();
+                printer = null;
+            }
+        }
 
         bool noPrintPath = !printFileStatus;
         bool noPrinter = printer == null;
@@ -141,6 +150,7 @@ public class Printer
             printer?.Dispose();
             printer = null;
         }
+
         if (noPrinter)
         {
             checkResult = false;

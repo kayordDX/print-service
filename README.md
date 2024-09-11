@@ -16,6 +16,21 @@ services:
   print-service:
     image: ghcr.io/kayorddx/print-service:latest
     environment:
+      ConnectionStrings:Redis: pos.kayord.com,password=${REDIS_PASSWORD},ssl=False,abortConnect=False
+      Serilog__MinimumLevel: Debug
+    volumes:
+      - /dev/usb/:/dev/usb/
+      - ./config.yml:/app/config.yml
+    restart: unless-stopped
+    privileged: true
+
+```
+
+```yaml
+services:
+  print-service:
+    image: ghcr.io/kayorddx/print-service:latest
+    environment:
       ConnectionStrings:Redis: localhost,password=P@ss,ssl=False,abortConnect=False
       Printer:OutletId: 1
       Printer:PrinterId: 1
