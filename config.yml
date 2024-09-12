@@ -1,11 +1,11 @@
-outletId: 993
+outletId: 3
 printers:
-  - printerId: 123
-    name: Main Printer asdf
-    filePath: /dev/usb/lp0
-    iPAddress: 10.0.0.8
-    port: 9100
+  - printerId: 301
+    name: Ruimsig 1
+    #iPAddress: 10.0.0.3
+    iPAddress: 192.168.1.186
     isUsbPrinter: false
-    outletId: 993
-    redisRefreshSec: 300
-    statusCheckSec: 30
+  - printerId: 123
+    name: Usb Printer
+    filePath: /dev/usb/lp0
+    isUsbPrinter: true

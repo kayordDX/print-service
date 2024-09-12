@@ -2,7 +2,7 @@ using System.Net;
 using System.Text.Json;
 using StackExchange.Redis;
 
-namespace PrintService.Services;
+namespace PrintService.Utils;
 
 public class RedisClient
 {

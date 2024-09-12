@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using PrintService.Config;
+using PrintService.Utils;
 using StackExchange.Redis;
 
 namespace PrintService.Services;
@@ -23,7 +24,7 @@ public class Subscriber : BackgroundService
     {
         foreach (var printer in _printers.printers)
         {
-            RedisChannel channel = new RedisChannel($"print:{_settings?.OutletId}:{printer.PrinterId}", RedisChannel.PatternMode.Auto);
+            RedisChannel channel = new RedisChannel($"print:{_settings?.OutletId}:{printer.PrinterConfig.PrinterId}", RedisChannel.PatternMode.Auto);
             var subscriber = await _redisClient.GetSubscriber();
 
             await subscriber.SubscribeAsync(channel, (channel, message) =>

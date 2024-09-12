@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ESCPOS_NET.Emitters;
+using PrintService.Utils;
 using StackExchange.Redis;
 
 namespace PrintService.Services;
