@@ -232,7 +232,9 @@ public class Printer
             {
                 DateUpdated = DateTime.UtcNow,
                 PrinterStatusEventArgs = status,
-                PrinterConfig = PrinterConfig,
+                Name = PrinterConfig.Name,
+                PrinterId = PrinterConfig.PrinterId,
+                OutletId = _printersConfig.OutletId,
                 LastException = (status == null) ? lastException?.Message : null
             };
             await SaveStatusToRedisAsync(printerStatus);

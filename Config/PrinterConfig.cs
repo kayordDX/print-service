@@ -7,5 +7,5 @@ public class PrinterConfig
     public string FilePath { get; set; } = "/dev/usb/lp0";
     public string IPAddress { get; set; } = "10.0.0.3";
     public int Port { get; set; } = 9100;
-    public bool IsUsbPrinter { get; set; } = true;
+    public bool IsUsbPrinter { get; set; } = false;
 }
