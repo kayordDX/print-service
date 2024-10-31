@@ -232,9 +232,10 @@ public class Printer
             {
                 DateUpdated = DateTime.UtcNow,
                 PrinterStatusEventArgs = status,
+                LineCharacters = PrinterConfig.LineCharacters,
                 Name = PrinterConfig.Name,
                 PrinterId = PrinterConfig.PrinterId,
-                OutletId = _printersConfig.OutletId,
+                OutletId = PrinterConfig.OutletId,
                 LastException = (status == null) ? lastException?.Message : null
             };
             await SaveStatusToRedisAsync(printerStatus);
@@ -324,7 +325,7 @@ public class Printer
         _logger.LogDebug("SaveStatusToRedisAsync");
         lastSyncStatus = printerStatus.PrinterStatusEventArgs;
         lastSyncTime = DateTime.UtcNow;
-        string key = $"printer:{_printersConfig?.OutletId}:{PrinterConfig.PrinterId}";
+        string key = $"printer:{PrinterConfig.OutletId}:{PrinterConfig.PrinterId}";
         await _redisClient.SetObjectAsync(key, printerStatus);
     }
 }

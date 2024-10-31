@@ -1,11 +1,12 @@
-outletId: 3
 printers:
-  - printerId: 301
-    name: Ruimsig 1
+  - printerId: 99
+    outletId: 1
+    name: Test
     #iPAddress: 10.0.0.3
-    iPAddress: 192.168.1.186
+    iPAddress: 192.168.1.113
     isUsbPrinter: false
-  - printerId: 123
-    name: Usb Printer
-    filePath: /dev/usb/lp0
-    isUsbPrinter: true
+    lineCharacters: 56
+  # - printerId: 123
+  #   name: Usb Printer
+  #   filePath: /dev/usb/lp0
+  #   isUsbPrinter: true

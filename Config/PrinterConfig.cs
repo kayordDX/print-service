@@ -8,4 +8,6 @@ public class PrinterConfig
     public string IPAddress { get; set; } = "10.0.0.3";
     public int Port { get; set; } = 9100;
     public bool IsUsbPrinter { get; set; } = false;
+    public int OutletId { get; set; }
+    public int LineCharacters { get; set; } = 64;
 }
