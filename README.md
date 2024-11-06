@@ -1,6 +1,8 @@
 # Print Service
 
-This is the print service to use to connect to existing EPSON printers using raspberry pi zero
+This is the print service to use to connect to existing EPSON printers using raspberry pi zero.
+
+We used to get status from printer. Now we will fire and forget.
 
 ## Secets
 
