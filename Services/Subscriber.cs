@@ -1,6 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Options;
-using PrintService.Config;
+using PrintService.Models;
 using PrintService.Utils;
 using StackExchange.Redis;
 
@@ -9,35 +9,43 @@ namespace PrintService.Services;
 public class Subscriber : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
-    private readonly Printers _printers;
     private readonly RedisClient _redisClient;
-    private readonly PrintersConfig? _settings;
+    private readonly Config _config;
 
-    public Subscriber(ILogger<Worker> logger, RedisClient redisClient, Printers printers, Settings settings)
+    public Subscriber(ILogger<Worker> logger, RedisClient redisClient, IOptions<Config> config)
     {
         _logger = logger;
         _redisClient = redisClient;
-        _printers = printers;
-        _settings = settings.GetPrintersConfig();
+        _config = config.Value;
     }
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        foreach (var printer in _printers.printers)
+        try
         {
-            RedisChannel channel = new RedisChannel($"print:{printer.PrinterConfig.OutletId}:{printer.PrinterConfig.PrinterId}", RedisChannel.PatternMode.Auto);
+            _logger.LogInformation("Printer Subscriber started and listening for {channel}", $"print:{_config.OutletId}:{_config.DeviceId}");
+            RedisChannel channel = new RedisChannel($"print:{_config.OutletId}:{_config.DeviceId}", RedisChannel.PatternMode.Auto);
             var subscriber = await _redisClient.GetSubscriber();
-
-            await subscriber.SubscribeAsync(channel, (channel, message) =>
+            await subscriber.SubscribeAsync(channel, async (channel, message) =>
             {
                 if (message.IsNullOrEmpty)
                 {
                     return;
                 }
-
-                List<byte[]> result = JsonSerializer.Deserialize<List<byte[]>>(message.ToString()) ?? new List<byte[]>();
-                printer.PrintQueue(result);
                 _logger.LogInformation("Received message {Channel} {Message}", channel, message);
+                PrintMessage? printMessage = JsonSerializer.Deserialize<PrintMessage>(message.ToString());
+                if (printMessage == null)
+                {
+                    _logger.LogInformation("Received empty message: {Channel} {Message}", channel, message);
+                    return;
+                }
+                await Printer.Print(printMessage, _logger);
+
             });
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in Subscriber");
+        }
     }
+
 }
