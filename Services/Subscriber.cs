@@ -22,25 +22,27 @@ public class Subscriber : BackgroundService
     {
         try
         {
-            _logger.LogInformation("Printer Subscriber started and listening for {channel}", $"print:{_config.OutletId}:{_config.DeviceId}");
-            RedisChannel channel = new RedisChannel($"print:{_config.OutletId}:{_config.DeviceId}", RedisChannel.PatternMode.Auto);
-            var subscriber = await _redisClient.GetSubscriber();
-            await subscriber.SubscribeAsync(channel, async (channel, message) =>
+            foreach (var outletId in _config.OutletIds)
             {
-                if (message.IsNullOrEmpty)
+                _logger.LogInformation("Printer Subscriber started and listening for {channel}", $"print:{outletId}:{_config.DeviceId}");
+                RedisChannel channel = new RedisChannel($"print:{outletId}:{_config.DeviceId}", RedisChannel.PatternMode.Auto);
+                var subscriber = await _redisClient.GetSubscriber();
+                await subscriber.SubscribeAsync(channel, async (channel, message) =>
                 {
-                    return;
-                }
-                _logger.LogInformation("Received message {Channel} {Message}", channel, message);
-                PrintMessage? printMessage = JsonSerializer.Deserialize<PrintMessage>(message.ToString());
-                if (printMessage == null)
-                {
-                    _logger.LogInformation("Received empty message: {Channel} {Message}", channel, message);
-                    return;
-                }
-                await Printer.Print(printMessage, _logger);
-
-            });
+                    if (message.IsNullOrEmpty)
+                    {
+                        return;
+                    }
+                    _logger.LogInformation("Received message {Channel} {Message}", channel, message);
+                    PrintMessage? printMessage = JsonSerializer.Deserialize<PrintMessage>(message.ToString());
+                    if (printMessage == null)
+                    {
+                        _logger.LogInformation("Received empty message: {Channel} {Message}", channel, message);
+                        return;
+                    }
+                    await Printer.Print(printMessage, _logger);
+                });
+            }
         }
         catch (Exception ex)
         {

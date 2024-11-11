@@ -19,7 +19,7 @@ services:
     image: ghcr.io/kayorddx/print-service:latest
     environment:
       ConnectionStrings:Redis: localhost,password=P@ss,ssl=False,abortConnect=False
-      Config:OutletId: 1
+      Config:OutletIds: [1]
       Config:DeviceId: 1
       Serilog__MinimumLevel: Debug
     restart: unless-stopped
