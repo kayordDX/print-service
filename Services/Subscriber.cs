@@ -22,7 +22,7 @@ public class Subscriber : BackgroundService
     {
         try
         {
-            foreach (var outletId in _config.OutletIds)
+            foreach (var outletId in _config.OutletIds.Split(","))
             {
                 _logger.LogInformation("Printer Subscriber started and listening for {channel}", $"print:{outletId}:{_config.DeviceId}");
                 RedisChannel channel = new RedisChannel($"print:{outletId}:{_config.DeviceId}", RedisChannel.PatternMode.Auto);
