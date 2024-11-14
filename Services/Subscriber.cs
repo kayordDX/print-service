@@ -18,36 +18,49 @@ public class Subscriber : BackgroundService
         _redisClient = redisClient;
         _config = config.Value;
     }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        try
+        foreach (var outletId in _config.OutletIds.Split(","))
         {
-            foreach (var outletId in _config.OutletIds.Split(","))
-            {
-                _logger.LogInformation("Printer Subscriber started and listening for {channel}", $"print:{outletId}:{_config.DeviceId}");
-                RedisChannel channel = new RedisChannel($"print:{outletId}:{_config.DeviceId}", RedisChannel.PatternMode.Auto);
-                var subscriber = await _redisClient.GetSubscriber();
-                await subscriber.SubscribeAsync(channel, async (channel, message) =>
+            _logger.LogInformation(
+                "Printer Subscriber started and listening for {channel}",
+                $"print:{outletId}:{_config.DeviceId}"
+            );
+            RedisChannel channel = new RedisChannel(
+                $"print:{outletId}:{_config.DeviceId}",
+                RedisChannel.PatternMode.Auto
+            );
+            var subscriber = await _redisClient.GetSubscriber();
+            await subscriber.SubscribeAsync(
+                channel,
+                async (channel, message) =>
                 {
                     if (message.IsNullOrEmpty)
                     {
                         return;
                     }
-                    _logger.LogInformation("Received message {Channel} {Message}", channel, message);
-                    PrintMessage? printMessage = JsonSerializer.Deserialize<PrintMessage>(message.ToString());
+                    _logger.LogInformation(
+                        "Received message {Channel} {Message}",
+                        channel,
+                        message
+                    );
+                    PrintMessage? printMessage = JsonSerializer.Deserialize<PrintMessage>(
+                        message.ToString()
+                    );
                     if (printMessage == null)
                     {
-                        _logger.LogInformation("Received empty message: {Channel} {Message}", channel, message);
+                        _logger.LogInformation(
+                            "Received empty message: {Channel} {Message}",
+                            channel,
+                            message
+                        );
                         return;
                     }
                     await Printer.Print(printMessage, _logger);
-                });
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error in Subscriber");
+                }
+            );
         }
     }
-
 }
+
