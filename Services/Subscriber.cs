@@ -21,6 +21,7 @@ public class Subscriber : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        var subscriber = await _redisClient.GetSubscriber();
         foreach (var outletId in _config.OutletIds.Split(","))
         {
             _logger.LogInformation(
@@ -31,7 +32,6 @@ public class Subscriber : BackgroundService
                 $"print:{outletId}:{_config.DeviceId}",
                 RedisChannel.PatternMode.Auto
             );
-            var subscriber = await _redisClient.GetSubscriber();
             await subscriber.SubscribeAsync(
                 channel,
                 async (channel, message) =>
@@ -63,4 +63,3 @@ public class Subscriber : BackgroundService
         }
     }
 }
-
