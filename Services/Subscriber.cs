@@ -19,9 +19,39 @@ public class Subscriber : BackgroundService
         _config = config.Value;
     }
 
+    private int _failureCount = 0;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var subscriber = await _redisClient.GetSubscriber();
+        await SubscribePrinters(subscriber);
+
+        // Check if connection is still active
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            await Task.Delay(10000, stoppingToken);
+            if (subscriber.IsConnected() == false)
+            {
+                _failureCount++;
+            }
+            else
+            {
+                _failureCount = 0;
+            }
+
+            if (_failureCount > 5)
+            {
+                _logger.LogInformation("Concurrent failure count reached. Restarting subscriber");
+                _failureCount = 0;
+                await subscriber.UnsubscribeAllAsync();
+                await SubscribePrinters(subscriber);
+            }
+        }
+    }
+
+    private async Task SubscribePrinters(ISubscriber subscriber)
+    {
+        bool isError = false;
         foreach (var outletId in _config.OutletIds.Split(","))
         {
             _logger.LogInformation(
@@ -32,34 +62,46 @@ public class Subscriber : BackgroundService
                 $"print:{outletId}:{_config.DeviceId}",
                 RedisChannel.PatternMode.Auto
             );
-            await subscriber.SubscribeAsync(
-                channel,
-                async (channel, message) =>
-                {
-                    if (message.IsNullOrEmpty)
+            try
+            {
+                await subscriber.SubscribeAsync(
+                    channel,
+                    async (channel, message) =>
                     {
-                        return;
-                    }
-                    _logger.LogInformation(
-                        "Received message {Channel} {Message}",
-                        channel,
-                        message
-                    );
-                    PrintMessage? printMessage = JsonSerializer.Deserialize<PrintMessage>(
-                        message.ToString()
-                    );
-                    if (printMessage == null)
-                    {
+                        if (message.IsNullOrEmpty)
+                        {
+                            return;
+                        }
                         _logger.LogInformation(
-                            "Received empty message: {Channel} {Message}",
+                            "Received message {Channel} {Message}",
                             channel,
                             message
                         );
-                        return;
+                        PrintMessage? printMessage = JsonSerializer.Deserialize<PrintMessage>(
+                            message.ToString()
+                        );
+                        if (printMessage == null)
+                        {
+                            _logger.LogInformation(
+                                "Received empty message: {Channel} {Message}",
+                                channel,
+                                message
+                            );
+                            return;
+                        }
+                        await Printer.Print(printMessage, _logger);
                     }
-                    await Printer.Print(printMessage, _logger);
-                }
-            );
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in SubscribePrinters");
+                isError = true;
+            }
+        }
+        if (isError)
+        {
+            _logger.LogInformation("Failed to subscribe to all printers");
         }
     }
 }
