@@ -8,7 +8,7 @@ We used to get status from printer. Now we will fire and forget.
 
 ```bash
 dotnet user-secrets init
-dotnet user-secrets set "ConnectionStrings:Redis" "secret" 
+dotnet user-secrets set "ConnectionStrings:Redis" "secret"
 ```
 
 ## Compose
@@ -28,5 +28,9 @@ services:
 ## Find Devices in network
 
 ```bash
+# Scan all open ports
 nmap -sn 192.168.1.*
+
+# Find Printers
+nmap --open -p9100 192.168.1.*
 ```
