@@ -12,7 +12,6 @@ public static class NMap
         try
         {
             logger.LogInformation($"Starting nmap scan for {channel}");
-            await redisClient.SetValueAsync($"status-{channel}", $"NMap Scan start Time: {DateTime.Now}");
 
             var ip = printMessage.IPAddress;
             var ipPattern = System.Text.RegularExpressions.Regex.Replace(ip, @"\d+$", "*");
@@ -20,6 +19,13 @@ public static class NMap
             StringBuilder sb = new();
             IEnumerable<string> args = ["--open", $"-p{printMessage.Port}", ipPattern];
             string argsString = string.Join(" ", args);
+
+            StringBuilder statusString = new();
+            statusString.AppendLine($"NMap Scan start Time: {DateTime.Now}");
+            statusString.AppendLine();
+            statusString.AppendLine($"nmap {argsString}");
+
+            await redisClient.SetValueAsync($"status-{channel}", statusString.ToString(), TimeSpan.FromMinutes(5));
 
             var result = await Cli.Wrap("nmap")
                 .WithArguments(args)

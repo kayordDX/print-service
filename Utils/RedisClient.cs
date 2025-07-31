@@ -55,6 +55,12 @@ public class RedisClient
         return await database.StringSetAsync(key, value);
     }
 
+    public async Task<bool> SetValueAsync(string key, string value, TimeSpan expiry)
+    {
+        var database = await GetDatabaseAsync();
+        return await database.StringSetAsync(key, value, expiry);
+    }
+
     public async Task<bool> DeleteAsync(string key)
     {
         var database = await GetDatabaseAsync();
