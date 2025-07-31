@@ -24,7 +24,7 @@ public class Subscriber : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var subscriber = await _redisClient.GetSubscriber();
-        await SubscribePrinters(subscriber);
+        await SubscribePrinters(subscriber, stoppingToken);
 
         // Check if connection is still active
         while (!stoppingToken.IsCancellationRequested)
@@ -44,12 +44,12 @@ public class Subscriber : BackgroundService
                 _logger.LogInformation("Concurrent failure count reached. Restarting subscriber");
                 _failureCount = 0;
                 await subscriber.UnsubscribeAllAsync();
-                await SubscribePrinters(subscriber);
+                await SubscribePrinters(subscriber, stoppingToken);
             }
         }
     }
 
-    private async Task SubscribePrinters(ISubscriber subscriber)
+    private async Task SubscribePrinters(ISubscriber subscriber, CancellationToken stoppingToken)
     {
         bool isError = false;
         foreach (var outletId in _config.OutletIds.Split(","))
@@ -77,19 +77,33 @@ public class Subscriber : BackgroundService
                             channel,
                             message
                         );
-                        PrintMessage? printMessage = JsonSerializer.Deserialize<PrintMessage>(
-                            message.ToString()
-                        );
-                        if (printMessage == null)
+                        try
                         {
-                            _logger.LogInformation(
-                                "Received empty message: {Channel} {Message}",
-                                channel,
-                                message
+                            PrintMessage? printMessage = JsonSerializer.Deserialize<PrintMessage>(
+                                message.ToString()
                             );
-                            return;
+                            if (printMessage == null)
+                            {
+                                _logger.LogInformation(
+                                    "Received empty message: {Channel} {Message}",
+                                    channel,
+                                    message
+                                );
+                                return;
+                            }
+                            if (printMessage.Action == "nmap")
+                            {
+                                await NMap.Scan(channel.ToString(), printMessage, _logger, _redisClient, stoppingToken);
+                            }
+                            else
+                            {
+                                await Printer.Print(printMessage, _logger);
+                            }
                         }
-                        await Printer.Print(printMessage, _logger);
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error with print instructions");
+                        }
                     }
                 );
             }
