@@ -49,7 +49,7 @@ public static class NMap
         }
         finally
         {
-            await redisClient.DeleteAsync($"status-{channel}");
+            await redisClient.DeleteKeyAsync($"status-{channel}");
         }
     }
 }

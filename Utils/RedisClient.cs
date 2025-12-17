@@ -6,36 +6,64 @@ namespace PrintService.Utils;
 
 public class RedisClient
 {
-    private static Lazy<Task<ConnectionMultiplexer>> lazyConnection = new();
+    private volatile IConnectionMultiplexer? _connection;
+    private readonly SemaphoreSlim _connectionLock = new(1, 1);
     private readonly IConfiguration _config;
+    private readonly string _connectionString;
 
     public RedisClient(IConfiguration config)
     {
         _config = config;
-        lazyConnection = new Lazy<Task<ConnectionMultiplexer>>(() => ConnectAsync(_config.GetConnectionString("Redis") ?? "localhost:6379"));
+        _connectionString = _config.GetConnectionString("Redis") ?? "localhost:6379";
     }
 
-    private static async Task<ConnectionMultiplexer> ConnectAsync(string connectionString)
+    private async Task<IConnectionMultiplexer> GetConnectionAsync()
     {
-        return await ConnectionMultiplexer.ConnectAsync(connectionString);
+        if (_connection?.IsConnected == true)
+            return _connection;
+
+        await _connectionLock.WaitAsync();
+        try
+        {
+            if (_connection?.IsConnected == true)
+                return _connection;
+
+            //Connection disconnected. Disposing connection...
+            _connection?.Dispose();
+
+            //Creating new instance of Redis Connection
+            _connection = await ConnectAsync();
+        }
+        finally
+        {
+            _connectionLock.Release();
+        }
+
+        return _connection;
     }
 
-    private async Task<IDatabase> GetDatabaseAsync()
+    private async Task<IConnectionMultiplexer> ConnectAsync()
     {
-        var connection = await lazyConnection.Value;
+        IConnectionMultiplexer connection = await ConnectionMultiplexer.ConnectAsync(_connectionString);
+        return connection;
+    }
+
+    public async Task<IDatabase> GetDatabaseAsync()
+    {
+        var connection = await GetConnectionAsync();
         return connection.GetDatabase();
     }
 
     public async Task<IServer> GetServer()
     {
-        var connection = await lazyConnection.Value;
+        var connection = await GetConnectionAsync();
         EndPoint endPoint = connection.GetEndPoints().First();
         return connection.GetServer(endPoint);
     }
 
     public async Task<ISubscriber> GetSubscriber()
     {
-        var connection = await lazyConnection.Value;
+        var connection = await GetConnectionAsync();
         return connection.GetSubscriber();
     }
 
@@ -51,20 +79,13 @@ public class RedisClient
 
     public async Task<bool> SetValueAsync(string key, string value)
     {
-        var database = await GetDatabaseAsync();
-        return await database.StringSetAsync(key, value);
+        return await SetValueAsync(key, value);
     }
 
     public async Task<bool> SetValueAsync(string key, string value, TimeSpan expiry)
     {
         var database = await GetDatabaseAsync();
         return await database.StringSetAsync(key, value, expiry);
-    }
-
-    public async Task<bool> DeleteAsync(string key)
-    {
-        var database = await GetDatabaseAsync();
-        return await database.KeyDeleteAsync(key);
     }
 
     public async Task<string?> GetValueAsync(string key)
@@ -76,7 +97,7 @@ public class RedisClient
     public async Task<IEnumerable<string>> GetKeys(string pattern)
     {
         var server = await GetServer();
-        IEnumerable<string> keys = server.Keys(pattern: pattern).Select(x => x.ToString()) ?? [];
+        var keys = server.Keys(pattern: pattern).Select(x => x.ToString()).ToList();
         return keys;
     }
 
@@ -86,11 +107,34 @@ public class RedisClient
         return await SetValueAsync(key, serializedValue);
     }
 
+    public async Task<bool> SetObjectAsync<T>(string key, T value, TimeSpan expiry)
+    {
+        var serializedValue = SerializeObject(value);
+        return await SetValueAsync(key, serializedValue, expiry);
+    }
+
     public async Task<T?> GetObjectAsync<T>(string key)
     {
         var serializedValue = await GetValueAsync(key);
         if (serializedValue != null)
             return DeserializeObject<T>(serializedValue);
         return default;
+    }
+
+    public async Task DeletePatternAsync(string pattern)
+    {
+        var keys = (await GetKeys(pattern)).ToArray();
+        if (keys.Length == 0)
+            return;
+
+        var database = await GetDatabaseAsync();
+        var redisKeys = keys.Select(k => (RedisKey)k).ToArray();
+        await database.KeyDeleteAsync(redisKeys);
+    }
+
+    public async Task DeleteKeyAsync(string key)
+    {
+        var database = await GetDatabaseAsync();
+        await database.KeyDeleteAsync(key);
     }
 }
