@@ -22,19 +22,30 @@ type probeReport struct {
 	latencyMillis int64
 }
 
+// printResult captures one ReportPrintResult invocation server-side.
+type printResult struct {
+	jobID  string
+	ok     bool
+	detail string
+}
+
 // testHub mimics Pos.Api's PrinterHub just enough to exercise the wire
-// contract end to end: it sends ReceivePrint/SyncPrinters to whoever asks
-// (Ping) and records everything the device reports.
+// contract end to end: it sends ReceivePrint/SyncPrinters/RotateKey to
+// whoever asks (Ping/TriggerRotate) and records everything the device
+// reports.
 type testHub struct {
 	signalr.Hub
 
 	print   model.PrintMessage
 	targets []model.PrinterTarget
+	newKey  string
 
-	mu          sync.Mutex
-	scanStarted int
-	scanResults []string
-	probes      []probeReport
+	mu           sync.Mutex
+	scanStarted  int
+	scanResults  []string
+	probes       []probeReport
+	printResults []printResult
+	keyAcks      []bool
 }
 
 // Ping is invoked by the device once it is connected; the hub answers with
@@ -42,6 +53,11 @@ type testHub struct {
 func (h *testHub) Ping() {
 	h.Clients().Caller().Send("ReceivePrint", h.print)
 	h.Clients().Caller().Send("SyncPrinters", h.targets)
+}
+
+// TriggerRotate is invoked by the device to make the hub push a new key.
+func (h *testHub) TriggerRotate() {
+	h.Clients().Caller().Send("RotateKey", h.newKey)
 }
 
 func (h *testHub) ReportScanStarted() {
@@ -62,14 +78,26 @@ func (h *testHub) ReportPrinterProbe(printerID int, reachable bool, latencyMs in
 	h.probes = append(h.probes, probeReport{printerID, reachable, latencyMs})
 }
 
-func (h *testHub) snapshot() (int, []string, []probeReport) {
+func (h *testHub) ReportPrintResult(jobID string, ok bool, detail string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.scanStarted, h.scanResults, h.probes
+	h.printResults = append(h.printResults, printResult{jobID, ok, detail})
+}
+
+func (h *testHub) ReportKeyRotated(ok bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.keyAcks = append(h.keyAcks, ok)
+}
+
+func (h *testHub) snapshot() (int, []string, []probeReport, []printResult, []bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.scanStarted, h.scanResults, h.probes, h.printResults, h.keyAcks
 }
 
 // startTestServer serves the hub over HTTP on a random local port.
-func startTestServer(t *testing.T, hub *testHub) (baseURL string, shutdown func()) {
+func startTestServer(t *testing.T, hub *testHub) string {
 	t.Helper()
 	serverCtx, cancelServer := context.WithCancel(context.Background())
 	t.Cleanup(cancelServer)
@@ -86,7 +114,7 @@ func startTestServer(t *testing.T, hub *testHub) (baseURL string, shutdown func(
 	server.MapHTTP(signalr.WithHTTPServeMux(mux), "/printer-hub")
 	httpServer := httptest.NewServer(mux)
 	t.Cleanup(httpServer.Close)
-	return httpServer.URL, cancelServer
+	return httpServer.URL
 }
 
 func waitFor(t *testing.T, what string, done func() bool) {
@@ -103,8 +131,8 @@ func waitFor(t *testing.T, what string, done func() bool) {
 
 // TestIntegrationRoundTrip connects the real client to a real (in-process)
 // SignalR server and verifies the full contract: receiving a print job with
-// base64-decoded byte chunks, receiving the printer assignment, and
-// reporting scans and probes back.
+// base64-decoded byte chunks, receiving the printer assignment, receiving a
+// pushed key rotation, and reporting scans, probes and print results back.
 func TestIntegrationRoundTrip(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -114,20 +142,24 @@ func TestIntegrationRoundTrip(t *testing.T) {
 		IPAddress:         "10.0.0.3",
 		Port:              9100,
 		PrintInstructions: [][]byte{{0x1b, '@'}, []byte("receipt body")},
+		JobID:             "job-42",
 	}
 	wantTargets := []model.PrinterTarget{
 		{PrinterID: 7, Name: "Front desk", IPAddress: "10.0.0.3", Port: 9100},
 		{PrinterID: 8, Name: "Bar", IPAddress: "10.0.0.4", Port: 9100},
 	}
+	wantNewKey := "kpos_pk_r0t4ted.brandnewsecret"
 
-	hub := &testHub{print: wantMsg, targets: wantTargets}
-	baseURL, _ := startTestServer(t, hub)
+	hub := &testHub{print: wantMsg, targets: wantTargets, newKey: wantNewKey}
+	baseURL := startTestServer(t, hub)
 
 	prints := make(chan model.PrintMessage, 1)
 	syncs := make(chan []model.PrinterTarget, 1)
-	client, err := New(ctx, baseURL, "kpos_pk_8f3a91c2.supersecret", Callbacks{
+	rotations := make(chan string, 1)
+	client, err := New(ctx, baseURL, func() string { return "kpos_pk_8f3a91c2.supersecret" }, Callbacks{
 		OnPrint:        func(m model.PrintMessage) { prints <- m },
 		OnSyncPrinters: func(targets []model.PrinterTarget) { syncs <- targets },
+		OnRotateKey:    func(newAPIKey string) { rotations <- newAPIKey },
 	}, slog.Default())
 	if err != nil {
 		t.Fatalf("New(): %v", err)
@@ -164,13 +196,37 @@ func TestIntegrationRoundTrip(t *testing.T) {
 	client.ReportPrinterProbe(7, true, 12)
 	client.ReportScanStarted()
 	client.ReportScanResult("scan output")
+	client.ReportPrintResult("job-42", true, "")
 
 	waitFor(t, "ReportPrinterProbe", func() bool {
-		_, _, probes := hub.snapshot()
+		_, _, probes, _, _ := hub.snapshot()
 		return len(probes) == 1 && probes[0] == probeReport{7, true, 12}
 	})
 	waitFor(t, "ReportScanStarted and ReportScanResult", func() bool {
-		started, results, _ := hub.snapshot()
+		started, results, _, _, _ := hub.snapshot()
 		return started == 1 && len(results) == 1 && results[0] == "scan output"
+	})
+	waitFor(t, "ReportPrintResult", func() bool {
+		_, _, _, printResults, _ := hub.snapshot()
+		return len(printResults) == 1 && printResults[0] == printResult{"job-42", true, ""}
+	})
+
+	// Key rotation: server pushes RotateKey, the device callback sees the
+	// new key and the ack reaches the server.
+	if err := <-client.client.Send("TriggerRotate"); err != nil {
+		t.Fatalf("TriggerRotate failed: %v", err)
+	}
+	select {
+	case got := <-rotations:
+		if got != wantNewKey {
+			t.Errorf("RotateKey delivered %q, want %q", got, wantNewKey)
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for RotateKey")
+	}
+	client.ReportKeyRotated(true)
+	waitFor(t, "ReportKeyRotated", func() bool {
+		_, _, _, _, acks := hub.snapshot()
+		return len(acks) == 1 && acks[0]
 	})
 }

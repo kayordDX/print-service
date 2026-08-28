@@ -23,6 +23,11 @@ type PrintMessage struct {
 	// PrintInstructions holds the raw ESC/POS byte chunks to write, in order.
 	// Empty for scan requests.
 	PrintInstructions [][]byte `json:"printInstructions"`
+	// JobID uniquely identifies this print job server-side. The device
+	// echoes it back via ReportPrintResult so the server can track
+	// success/failure and dedup (e.g. during dual-transport migration).
+	// Empty on legacy servers: the device then skips result reporting.
+	JobID string `json:"jobId,omitempty"`
 }
 
 // PrinterTarget mirrors Pos.Api PrinterHub.PrinterTarget. The server sends

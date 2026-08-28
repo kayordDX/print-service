@@ -18,6 +18,11 @@ import (
 // so they must be much cheaper than an actual print.
 const DefaultDialTimeout = 500 * time.Millisecond
 
+// DefaultFailureThreshold is how many consecutive failed probes are needed
+// before a printer is reported unreachable. One missed probe (a Wi-Fi blip,
+// a momentary collision) does not flip the badge in the admin UI.
+const DefaultFailureThreshold = 2
+
 // Store holds the printer targets assigned by the server. It is safe for
 // concurrent use: the hub receive loop swaps the set while the prober reads.
 type Store struct {
@@ -43,7 +48,6 @@ func (s *Store) Get() []model.PrinterTarget {
 }
 
 // Prober periodically probes all assigned printers and reports each result.
-// The zero values of dialTimeout are filled with defaults by NewProber.
 type Prober struct {
 	store       *Store
 	interval    time.Duration
@@ -51,11 +55,17 @@ type Prober struct {
 	report      func(ctx context.Context, printerID int, reachable bool, latencyMillis int64)
 	connected   func() bool
 	logger      *slog.Logger
+
+	mu               sync.Mutex
+	failures         map[int]int // printerID -> consecutive failures
+	failureThreshold int
 }
 
 // NewProber returns a prober for store that runs every interval, reports
 // results through report, and skips rounds while connected reports false
 // (results would be meaningless while the hub is down anyway).
+// A printer is only reported unreachable after
+// DefaultFailureThreshold consecutive failed probes.
 func NewProber(
 	store *Store,
 	interval time.Duration,
@@ -64,12 +74,14 @@ func NewProber(
 	logger *slog.Logger,
 ) *Prober {
 	return &Prober{
-		store:       store,
-		interval:    interval,
-		dialTimeout: DefaultDialTimeout,
-		report:      report,
-		connected:   connected,
-		logger:      logger,
+		store:            store,
+		interval:         interval,
+		dialTimeout:      DefaultDialTimeout,
+		report:           report,
+		connected:        connected,
+		logger:           logger,
+		failures:         make(map[int]int),
+		failureThreshold: DefaultFailureThreshold,
 	}
 }
 
@@ -117,7 +129,9 @@ func (p *Prober) probeAll(ctx context.Context) {
 	wg.Wait()
 }
 
-// probeOne dials a single printer and reports the outcome.
+// probeOne dials a single printer. Success resets the failure counter and
+// is reported immediately; failure is only reported once it persists for
+// failureThreshold consecutive probes (hysteresis against transient blips).
 func (p *Prober) probeOne(ctx context.Context, t model.PrinterTarget) {
 	addr := net.JoinHostPort(t.IPAddress, strconv.Itoa(t.Port))
 
@@ -125,16 +139,32 @@ func (p *Prober) probeOne(ctx context.Context, t model.PrinterTarget) {
 	began := time.Now()
 	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	latencyMillis := time.Since(began).Milliseconds()
+
+	p.mu.Lock()
+	if err == nil {
+		p.failures[t.PrinterID] = 0
+	} else {
+		p.failures[t.PrinterID]++
+	}
+	consecutive := p.failures[t.PrinterID]
+	report := err == nil || consecutive >= p.failureThreshold
+	p.mu.Unlock()
+
+	if !report {
+		p.logger.Debug("printer probe failed, waiting for threshold",
+			"printerId", t.PrinterID, "name", t.Name, "addr", addr,
+			"consecutiveFailures", consecutive)
+		return
+	}
 	if err != nil {
 		p.logger.Warn("printer unreachable",
 			"printerId", t.PrinterID, "name", t.Name, "addr", addr,
-			"latencyMs", latencyMillis, "error", err)
-		p.report(ctx, t.PrinterID, false, latencyMillis)
-		return
+			"consecutiveFailures", consecutive, "latencyMs", latencyMillis, "error", err)
 	}
-	_ = conn.Close()
-
-	p.logger.Debug("printer reachable",
-		"printerId", t.PrinterID, "name", t.Name, "addr", addr, "latencyMs", latencyMillis)
-	p.report(ctx, t.PrinterID, true, latencyMillis)
+	if err == nil {
+		_ = conn.Close()
+		p.logger.Debug("printer reachable",
+			"printerId", t.PrinterID, "name", t.Name, "addr", addr, "latencyMs", latencyMillis)
+	}
+	p.report(ctx, t.PrinterID, err == nil, latencyMillis)
 }

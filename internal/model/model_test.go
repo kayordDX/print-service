@@ -15,13 +15,14 @@ func TestPrintMessageMarshalMatchesDotNet(t *testing.T) {
 		IPAddress:         "10.0.0.3",
 		Port:              9100,
 		PrintInstructions: [][]byte{{0x1b, 0x40}, []byte("Hello")},
+		JobID:             "job-42",
 	}
 	got, err := json.Marshal(msg)
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
 	want := `{"printerName":"Front desk","ipAddress":"10.0.0.3","port":9100,` +
-		`"printInstructions":["G0A=","SGVsbG8="]}`
+		`"printInstructions":["G0A=","SGVsbG8="],"jobId":"job-42"}`
 	if string(got) != want {
 		t.Errorf("json.Marshal() =\n  %s\nwant\n  %s", got, want)
 	}
@@ -42,12 +43,12 @@ func TestPrintMessageActionOmittedWhenEmpty(t *testing.T) {
 func TestPrintMessageUnmarshal(t *testing.T) {
 	t.Parallel()
 	in := `{"action":"nmap","printerName":"Bar","ipAddress":"192.168.1.*","port":9100,` +
-		`"printInstructions":["G0A="]}`
+		`"printInstructions":["G0A="],"jobId":"job-7"}`
 	var msg PrintMessage
 	if err := json.Unmarshal([]byte(in), &msg); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
-	if msg.Action != "nmap" || msg.PrinterName != "Bar" || msg.IPAddress != "192.168.1.*" || msg.Port != 9100 {
+	if msg.Action != "nmap" || msg.PrinterName != "Bar" || msg.IPAddress != "192.168.1.*" || msg.Port != 9100 || msg.JobID != "job-7" {
 		t.Errorf("Unmarshal result = %+v", msg)
 	}
 	if len(msg.PrintInstructions) != 1 || string(msg.PrintInstructions[0]) != "\x1b@" {

@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -22,18 +23,14 @@ import (
 	"github.com/kayorddx/print-service/internal/hubclient"
 	"github.com/kayorddx/print-service/internal/model"
 	"github.com/kayorddx/print-service/internal/printer"
+	"github.com/kayorddx/print-service/internal/printqueue"
 	"github.com/kayorddx/print-service/internal/probe"
 	"github.com/kayorddx/print-service/internal/scan"
 )
 
-const (
-	// printQueueSize bounds queued print jobs. The queue only bridges the
-	// hub receive loop and the print worker; it is not a persistent store.
-	printQueueSize = 64
-	// scanTimeout bounds a single network scan; a /24 finishes in seconds,
-	// so a timeout means something is wrong (e.g. a pathological pattern).
-	scanTimeout = 5 * time.Minute
-)
+// scanTimeout bounds a single network scan; a /24 finishes in seconds, so a
+// timeout means something is wrong (e.g. a pathological pattern).
+const scanTimeout = 5 * time.Minute
 
 func main() {
 	if err := run(); err != nil {
@@ -47,29 +44,39 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// The key comes from the environment or, failing that, from a key file
+	// written by a previous rotation.
+	apiKey := cfg.APIKey
+	if apiKey.Secret == "" {
+		apiKey, err = config.LoadKeyFile(cfg.KeyFile)
+		if err != nil {
+			return err
+		}
+	}
+
 	logger := newLogger(cfg.LogLevel)
 	slog.SetDefault(logger)
 	// Only the public key id is logged — never the secret.
 	logger.Info("starting print-service",
-		"keyId", cfg.APIKey.KeyID, "baseURL", cfg.BaseURL, "probeInterval", cfg.ProbeInterval)
+		"keyId", apiKey.KeyID, "baseURL", cfg.BaseURL, "probeInterval", cfg.ProbeInterval)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	app := newApp(cfg, logger)
+	app := newApp(cfg, logger, apiKey)
 
-	hub, err := hubclient.New(ctx, cfg.BaseURL, cfg.APIKey.Bearer(), hubclient.Callbacks{
-		OnPrint:        app.enqueuePrint,
+	hub, err := hubclient.New(ctx, cfg.BaseURL, app.currentKey, hubclient.Callbacks{
+		OnPrint:        app.dispatchPrint,
 		OnSyncPrinters: app.probeStore.Set,
+		OnRotateKey:    app.rotateKey,
 	}, logger)
 	if err != nil {
 		return err
 	}
 	app.hub = hub
 
-	// Print jobs are serialized through a single worker (a thermal printer
-	// cannot parallelize anyway); scans and probes run in their own goroutines.
-	go app.runPrintWorker(ctx)
+	// Print jobs run on one worker per printer (a slow printer must never
+	// delay the others); scans run in their own goroutines.
 	go app.prober.Run(ctx)
 
 	hub.Start()
@@ -87,18 +94,27 @@ type app struct {
 	hub        *hubclient.Client
 	probeStore *probe.Store
 	prober     *probe.Prober
-	prints     chan model.PrintMessage
+	prints     *printqueue.Queue
+	apiKey     atomic.Value // config.APIKey; swapped on rotation
 }
 
-func newApp(cfg config.Config, logger *slog.Logger) *app {
+func newApp(cfg config.Config, logger *slog.Logger, apiKey config.APIKey) *app {
 	a := &app{
 		cfg:        cfg,
 		logger:     logger,
 		probeStore: probe.NewStore(),
-		prints:     make(chan model.PrintMessage, printQueueSize),
+		apiKey:     atomic.Value{},
 	}
+	a.apiKey.Store(apiKey)
+	a.prints = printqueue.New(context.Background(), a.handlePrintJob, logger)
 	a.prober = probe.NewProber(a.probeStore, cfg.ProbeInterval, a.reportProbe, a.hubConnected, logger)
 	return a
+}
+
+// currentKey returns the active API key; consulted on every connection
+// attempt so a rotated key is used on the next (re)connect.
+func (a *app) currentKey() string {
+	return a.apiKey.Load().(config.APIKey).Bearer()
 }
 
 // hubConnected reports whether scan results and probe reports can currently
@@ -111,62 +127,74 @@ func (a *app) reportProbe(ctx context.Context, printerID int, reachable bool, la
 	a.hub.ReportPrinterProbe(printerID, reachable, latencyMillis)
 }
 
-// enqueuePrint queues a print job without ever blocking the hub receive
-// loop. The queue is small and the worker fast; if it ever fills up, jobs
-// are dropped loudly rather than stalling all hub traffic.
-func (a *app) enqueuePrint(msg model.PrintMessage) {
-	select {
-	case a.prints <- msg:
-	default:
-		a.logger.Error("print queue full, dropping job",
-			"printerName", msg.PrinterName, "ip", msg.IPAddress, "port", msg.Port)
-	}
-}
-
-// runPrintWorker consumes print jobs until ctx is canceled.
-func (a *app) runPrintWorker(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case msg := <-a.prints:
-			a.handlePrint(ctx, msg)
-		}
-	}
-}
-
-// handlePrint dispatches one message: scans run in their own goroutine so a
-// long scan never delays printing, everything else is printed directly.
-func (a *app) handlePrint(ctx context.Context, msg model.PrintMessage) {
+// dispatchPrint routes one hub message: scans run in their own goroutine so
+// a long scan never delays printing, everything else goes to the per
+// printer queue.
+func (a *app) dispatchPrint(msg model.PrintMessage) {
 	if msg.Action == "nmap" {
 		// Legacy action value kept for wire compatibility: the server asks
 		// for a network scan through the same message type.
-		go a.runScan(ctx, msg)
+		go a.runScan(msg)
 		return
 	}
-	// The server sends the port it has on file for the printer, so any
-	// port works; this only covers a message that omitted it.
-	if msg.Port <= 0 {
-		msg.Port = 9100
+	if !a.prints.Enqueue(msg) {
+		a.logger.Error("print queue full, dropping job",
+			"printerName", msg.PrinterName, "ip", msg.IPAddress, "port", msg.Port,
+			"jobId", msg.JobID)
 	}
-	if err := printer.Print(ctx, msg); err != nil {
+}
+
+// handlePrintJob writes one job to its printer and reports the outcome, so
+// the server knows whether the receipt actually printed.
+func (a *app) handlePrintJob(ctx context.Context, msg model.PrintMessage) {
+	err := printer.Print(ctx, msg)
+	if err != nil {
 		a.logger.Error("print failed",
-			"printerName", msg.PrinterName, "ip", msg.IPAddress, "port", msg.Port, "error", err)
+			"printerName", msg.PrinterName, "ip", msg.IPAddress, "port", msg.Port,
+			"jobId", msg.JobID, "error", err)
+	} else {
+		a.logger.Info("print delivered",
+			"printerName", msg.PrinterName, "ip", msg.IPAddress, "port", msg.Port,
+			"chunks", len(msg.PrintInstructions), "bytes", totalBytes(msg),
+			"jobId", msg.JobID)
+	}
+	if msg.JobID != "" {
+		detail := ""
+		if err != nil {
+			detail = err.Error()
+		}
+		a.hub.ReportPrintResult(msg.JobID, err == nil, detail)
+	}
+}
+
+// rotateKey persists a server-pushed replacement key and acknowledges it.
+// Without a configured key file there is nowhere to persist the key, so the
+// rotation is rejected (naked) and the device keeps the current one.
+func (a *app) rotateKey(newAPIKey string) {
+	key, err := config.ParseAPIKey(newAPIKey)
+	if err != nil {
+		a.logger.Error("rejecting invalid rotated key", "error", err)
+		a.hub.ReportKeyRotated(false)
 		return
 	}
-	a.logger.Info("print delivered",
-		"printerName", msg.PrinterName, "ip", msg.IPAddress, "port", msg.Port,
-		"chunks", len(msg.PrintInstructions), "bytes", totalBytes(msg))
+	if err := config.SaveKeyFile(a.cfg.KeyFile, key); err != nil {
+		a.logger.Error("rejecting rotated key", "error", err)
+		a.hub.ReportKeyRotated(false)
+		return
+	}
+	a.apiKey.Store(key)
+	a.logger.Info("API key rotated", "keyId", key.KeyID)
+	a.hub.ReportKeyRotated(true)
 }
 
 // runScan performs a native network scan and reports start and result to
 // the server, mirroring the old nmap flow (status ping, then full output).
-func (a *app) runScan(ctx context.Context, msg model.PrintMessage) {
+func (a *app) runScan(msg model.PrintMessage) {
 	logger := a.logger.With("pattern", msg.IPAddress, "port", msg.Port)
 	logger.Info("scan requested")
 	a.hub.ReportScanStarted()
 
-	ctx, cancel := context.WithTimeout(ctx, scanTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), scanTimeout)
 	defer cancel()
 
 	output, err := scan.Run(ctx, msg.IPAddress, msg.Port)
