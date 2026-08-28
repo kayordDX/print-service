@@ -44,9 +44,21 @@ see `.mise.toml`. With mise installed, it is fetched automatically:
 
 ```bash
 mise install        # installs the pinned Go version (project-local)
-make all            # fmt + vet + test + build
-make run            # go run .
+mise run all        # fmt + vet + test + build
+mise run dev        # run the service locally
 ```
+
+Or the native go way (equivalent, once the pinned toolchain is active via
+`mise exec --` or an activated shell):
+
+```bash
+go test ./...
+go vet ./...
+CGO_ENABLED=0 go build -o bin/print-service .
+```
+
+All tasks live in `.mise.toml` under `[tasks]` (`mise run build-all`,
+`mise run docker`, `mise run clean`, ...).
 
 Project layout:
 
@@ -65,7 +77,7 @@ internal/probe/             — printer reachability probes
 Cross-compiled static binaries:
 
 ```bash
-make build-all   # -> dist/print-service-linux-{armv6,arm64,amd64}
+mise run build-all   # -> dist/print-service-linux-{armv6,arm64,amd64}
 ```
 
 Docker (multi-arch, from `scratch` — the binary is static and needs nothing
@@ -116,7 +128,8 @@ services:
 3. Start the service:
 
    ```bash
-   POS_BASE_URL=http://localhost:5117 POS_API_KEY=kpos_... make run
+   POS_BASE_URL=http://localhost:5117 POS_API_KEY=kpos_... mise run dev
+   # or: POS_BASE_URL=... POS_API_KEY=... go run .
    ```
 
 4. Verify:

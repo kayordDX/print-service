@@ -104,21 +104,32 @@ func freePort(t *testing.T) (string, int) {
 	return host, port
 }
 
-func TestRunFindsOpenPort(t *testing.T) {
-	t.Parallel()
+// startOpenListener binds 127.0.0.1 on an arbitrary free port (which will
+// almost never be 9100) and accepts connections until the test ends.
+func startOpenListener(t *testing.T) (host string, port int) {
+	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	defer ln.Close()
+	t.Cleanup(func() { _ = ln.Close() })
 	go func() {
-		conn, err := ln.Accept()
-		if err == nil {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
 			_ = conn.Close()
 		}
 	}()
 	host, portStr, _ := net.SplitHostPort(ln.Addr().String())
-	port, _ := strconv.Atoi(portStr)
+	port, _ = strconv.Atoi(portStr)
+	return host, port
+}
+
+func TestRunFindsOpenPort(t *testing.T) {
+	t.Parallel()
+	host, port := startOpenListener(t)
 
 	output, err := Run(context.Background(), host, port)
 	if err != nil {
@@ -129,6 +140,26 @@ func TestRunFindsOpenPort(t *testing.T) {
 	}
 	if !strings.Contains(output, "Open ports:") {
 		t.Errorf("Run() output does not list open ports:\n%s", output)
+	}
+}
+
+// TestRunCustomPort proves the scanned port is not hardcoded to 9100: the
+// POS server tells the device which port to test (the printer's configured
+// port), so a printer on e.g. 9105 must be found on 9105.
+func TestRunCustomPort(t *testing.T) {
+	t.Parallel()
+	host, port := startOpenListener(t)
+	if port == 9100 {
+		t.Skip("test listener happened to bind 9100; nothing to prove")
+	}
+
+	output, err := Run(context.Background(), host, port)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	want := net.JoinHostPort(host, strconv.Itoa(port))
+	if !strings.Contains(output, want) {
+		t.Errorf("Run() output does not report %s as open:\n%s", want, output)
 	}
 }
 

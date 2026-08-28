@@ -1,2 +1,50 @@
 [tools]
 go = "1.27.0"
+
+# ---- development ----
+# All tasks use the pinned Go from [tools]; native `go ...` commands work
+# the same way once the mise environment is active (mise exec/shell).
+
+[tasks.all]
+description = "fmt + vet + test + build"
+depends = ["fmt", "vet", "test", "build"]
+
+[tasks.build]
+description = "Build the binary for the host platform"
+run = "CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o bin/print-service ."
+
+[tasks.dev]
+description = "Run the service locally (needs POS_BASE_URL + POS_API_KEY)"
+run = "CGO_ENABLED=0 go run ."
+
+[tasks.test]
+description = "Run all tests"
+run = "go test ./..."
+
+[tasks.vet]
+run = "go vet ./..."
+
+[tasks.fmt]
+run = "gofmt -l -w ."
+
+[tasks.tidy]
+run = "go mod tidy"
+
+# ---- release ----
+
+[tasks.build-all]
+description = "Cross-compile fully static release binaries for all target devices"
+dir = "{{config_root}}"
+run = """
+CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=6 go build -trimpath -ldflags '-s -w' -o dist/print-service-linux-armv6 .
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags '-s -w' -o dist/print-service-linux-arm64 .
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags '-s -w' -o dist/print-service-linux-amd64 .
+"""
+
+[tasks.docker]
+description = "Build the multi-arch container image"
+run = "docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v6 -t ghcr.io/kayorddx/print-service:local ."
+
+[tasks.clean]
+description = "Remove build output"
+run = "rm -rf bin dist"

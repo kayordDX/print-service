@@ -144,6 +144,8 @@ func (a *app) handlePrint(ctx context.Context, msg model.PrintMessage) {
 		go a.runScan(ctx, msg)
 		return
 	}
+	// The server sends the port it has on file for the printer, so any
+	// port works; this only covers a message that omitted it.
 	if msg.Port <= 0 {
 		msg.Port = 9100
 	}

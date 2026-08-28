@@ -2,7 +2,6 @@
 *
 !go.mod
 !go.sum
-!Makefile
 !*.go
 !internal
 !internal/**

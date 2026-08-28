@@ -77,6 +77,37 @@ func TestPrintWritesAllChunksInOrder(t *testing.T) {
 	}
 }
 
+// TestPrintCustomPort proves the port is not hardcoded: the POS server
+// stores a port per printer and sends it in every PrintMessage, so a
+// printer listening on e.g. 9105 must be printed to on 9105.
+func TestPrintCustomPort(t *testing.T) {
+	t.Parallel()
+	addr, received := startFakePrinter(t)
+	host, port := splitAddr(t, addr)
+	if port == 9100 {
+		t.Skip("test listener happened to bind 9100; nothing to prove")
+	}
+
+	err := Print(context.Background(), model.PrintMessage{
+		PrinterName:       "Bar",
+		IPAddress:         host,
+		Port:              port,
+		PrintInstructions: [][]byte{{0x1b, '@'}, []byte("custom port receipt")},
+	})
+	if err != nil {
+		t.Fatalf("Print() error = %v", err)
+	}
+
+	select {
+	case got := <-received:
+		if !bytes.Contains(got, []byte("custom port receipt")) {
+			t.Errorf("printer received %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for the fake printer to receive bytes")
+	}
+}
+
 func TestPrintDialError(t *testing.T) {
 	t.Parallel()
 	// Reserve a port, then close the listener: nothing is listening there,
