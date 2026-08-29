@@ -8,11 +8,8 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -69,14 +66,8 @@ type Config struct {
 	// e.g. "https://api.kayord.com".
 	BaseURL string
 
-	// APIKey authenticates this device against the POS API. It may be
-	// zero-valued when KeyFile is set and holds the current key.
+	// APIKey authenticates this device against the POS API.
 	APIKey APIKey
-
-	// KeyFile is an optional file holding the current API key. When set,
-	// a key rotated at runtime (pushed by the server) is persisted there,
-	// so rotation never requires touching the environment again.
-	KeyFile string
 
 	// LogLevel is one of "debug", "info", "warn" or "error".
 	LogLevel string
@@ -104,17 +95,15 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 
 	rawKey := strings.TrimSpace(getenv("POS_API_KEY"))
-	if rawKey != "" {
+	if rawKey == "" {
+		errs = append(errs, fmt.Errorf("POS_API_KEY is required (create one in the POS admin UI)"))
+	} else {
 		key, err := ParseAPIKey(rawKey)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("POS_API_KEY: %w", err))
 		} else {
 			cfg.APIKey = key
 		}
-	}
-	cfg.KeyFile = strings.TrimSpace(getenv("POS_API_KEY_FILE"))
-	if rawKey == "" && cfg.KeyFile == "" {
-		errs = append(errs, fmt.Errorf("POS_API_KEY or POS_API_KEY_FILE is required (create a key in the POS admin UI)"))
 	}
 
 	cfg.LogLevel = strings.ToLower(strings.TrimSpace(getenv("LOG_LEVEL")))
@@ -151,54 +140,4 @@ func joinErrs(errs []error) error {
 		msgs[i] = "- " + err.Error()
 	}
 	return fmt.Errorf("invalid configuration:\n%s", strings.Join(msgs, "\n"))
-}
-
-// LoadKeyFile reads and parses an API key previously persisted by key
-// rotation (see SaveKeyFile).
-func LoadKeyFile(path string) (APIKey, error) {
-	if path == "" {
-		return APIKey{}, errors.New("no key file configured")
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return APIKey{}, fmt.Errorf("read key file %s: %w", path, err)
-	}
-	key, err := ParseAPIKey(strings.TrimSpace(string(raw)))
-	if err != nil {
-		return APIKey{}, fmt.Errorf("key file %s: %w", path, err)
-	}
-	return key, nil
-}
-
-// SaveKeyFile atomically persists the key with 0600 permissions so a
-// rotated key survives restarts. It requires a configured file path; a
-// device that was started with the key in the environment only cannot
-// persist rotations.
-func SaveKeyFile(path string, key APIKey) error {
-	if path == "" {
-		return errors.New("cannot persist rotated key: no key file configured (set POS_API_KEY_FILE)")
-	}
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".print-service-key-*")
-	if err != nil {
-		return fmt.Errorf("create temp key file in %s: %w", dir, err)
-	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }() // no-op after successful rename
-
-	if _, err := tmp.WriteString(key.Bearer() + "\n"); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("write key file: %w", err)
-	}
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("chmod key file: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close key file: %w", err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return fmt.Errorf("replace key file %s: %w", path, err)
-	}
-	return nil
 }

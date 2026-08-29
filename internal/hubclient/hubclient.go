@@ -30,11 +30,6 @@ type Callbacks struct {
 	// OnSyncPrinters is called whenever the server assigns this device its
 	// printer set (on connect and whenever the set changes).
 	OnSyncPrinters func([]model.PrinterTarget)
-	// OnRotateKey is called when the server hands the device a replacement
-	// API key. The device persists it and acknowledges via
-	// ReportKeyRotated; the server must keep the old key valid until the
-	// ack (or a timeout) arrives.
-	OnRotateKey func(newAPIKey string)
 }
 
 // Receiver implements the server -> device hub methods. Method names must
@@ -58,17 +53,6 @@ func (r *Receiver) ReceivePrint(msg model.PrintMessage) {
 	r.callbacks.OnPrint(msg)
 }
 
-// RotateKey is invoked by the server with a replacement API key, allowing
-// rotation without a site visit. Invoking it on a connection authenticated
-// with the current key proves the device's identity.
-func (r *Receiver) RotateKey(newAPIKey string) {
-	if r.callbacks.OnRotateKey == nil {
-		return
-	}
-	r.logger.Info("key rotation received")
-	r.callbacks.OnRotateKey(newAPIKey)
-}
-
 // SyncPrinters is invoked by the server with the printers this device is
 // responsible for probing.
 func (r *Receiver) SyncPrinters(targets []model.PrinterTarget) {
@@ -86,17 +70,15 @@ type Client struct {
 	logger *slog.Logger
 }
 
-// New builds (but does not start) the hub client. The apiKey function is
-// consulted on every connection attempt, so a key rotated at runtime is
-// picked up on the next (re)connect. The returned client reconnects
-// automatically forever; the server re-joins this connection to its groups
-// on every (re)connect, so there is no resubscribe logic.
-func New(ctx context.Context, baseURL string, apiKey func() string, callbacks Callbacks, logger *slog.Logger) (*Client, error) {
+// New builds (but does not start) the hub client. The returned client
+// reconnects automatically forever; the server re-joins this connection to
+// its groups on every (re)connect, so there is no resubscribe logic.
+func New(ctx context.Context, baseURL, apiKey string, callbacks Callbacks, logger *slog.Logger) (*Client, error) {
 	// Headers reach the negotiate POST and the WebSocket upgrade; the
 	// server's PrinterKey scheme accepts "Authorization: Bearer kpos_...".
 	headers := func() http.Header {
 		h := http.Header{}
-		h.Set("Authorization", "Bearer "+apiKey())
+		h.Set("Authorization", "Bearer "+apiKey)
 		return h
 	}
 	connect := func() (signalr.Connection, error) {
@@ -170,11 +152,6 @@ func (c *Client) ReportPrinterProbe(printerID int, reachable bool, latencyMillis
 func (c *Client) ReportPrintResult(jobID string, ok bool, detail string) {
 	c.send("ReportPrintResult", jobID, ok, detail)
 }
-
-// ReportKeyRotated acknowledges (or rejects) a key rotation; the server
-// must keep the old key valid until this arrives. Invokes
-// PrinterHub.ReportKeyRotated.
-func (c *Client) ReportKeyRotated(ok bool) { c.send("ReportKeyRotated", ok) }
 
 // stateName maps client states to stable, human-readable log values.
 func stateName(s signalr.ClientState) string {

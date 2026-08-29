@@ -1,7 +1,6 @@
 package config
 
 import (
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -79,9 +78,9 @@ func TestLoadErrors(t *testing.T) {
 			want: `must start with "kpos_"`,
 		},
 		{
-			name: "neither key nor key file",
+			name: "missing key",
 			env:  map[string]string{"POS_BASE_URL": "https://api"},
-			want: "POS_API_KEY or POS_API_KEY_FILE",
+			want: "POS_API_KEY is required",
 		},
 		{
 			name: "key without secret",
@@ -125,75 +124,6 @@ func TestParseAPIKey(t *testing.T) {
 	if got := key.String(); strings.Contains(got, "abc") {
 		// The secret must never survive into the log-safe form.
 		t.Errorf("String() leaks the secret: %q", got)
-	}
-}
-
-func TestLoadAllowsKeyFileWithoutEnvKey(t *testing.T) {
-	t.Parallel()
-	cfg, err := Load(getenvWith(map[string]string{
-		"POS_BASE_URL":     "https://api.kayord.com",
-		"POS_API_KEY_FILE": "/var/lib/kayord/print-service.key",
-	}))
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.KeyFile != "/var/lib/kayord/print-service.key" {
-		t.Errorf("KeyFile = %q", cfg.KeyFile)
-	}
-	if cfg.APIKey.Secret != "" {
-		t.Errorf("APIKey = %+v, want empty (loaded from file later)", cfg.APIKey)
-	}
-}
-
-func TestKeyFileRoundTrip(t *testing.T) {
-	t.Parallel()
-	path := t.TempDir() + "/print-service.key"
-	key := APIKey{KeyID: "pk_rotated", Secret: "newsecret"}
-
-	if err := SaveKeyFile(path, key); err != nil {
-		t.Fatalf("SaveKeyFile() error = %v", err)
-	}
-	got, err := LoadKeyFile(path)
-	if err != nil {
-		t.Fatalf("LoadKeyFile() error = %v", err)
-	}
-	if got != key {
-		t.Errorf("LoadKeyFile() = %+v, want %+v", got, key)
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("Stat() error = %v", err)
-	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("key file permissions = %v, want 0600", perm)
-	}
-	// A second save must replace the file (no leftovers).
-	key2 := APIKey{KeyID: "pk_again", Secret: "other"}
-	if err := SaveKeyFile(path, key2); err != nil {
-		t.Fatalf("second SaveKeyFile() error = %v", err)
-	}
-	if got, _ := LoadKeyFile(path); got != key2 {
-		t.Errorf("LoadKeyFile() after rewrite = %+v, want %+v", got, key2)
-	}
-}
-
-func TestLoadKeyFileErrors(t *testing.T) {
-	t.Parallel()
-	if _, err := LoadKeyFile(""); err == nil {
-		t.Error("LoadKeyFile(\"\") succeeded, want error")
-	}
-	if _, err := LoadKeyFile(t.TempDir() + "/missing.key"); err == nil {
-		t.Error("LoadKeyFile(missing) succeeded, want error")
-	}
-	path := t.TempDir() + "/bad.key"
-	if err := os.WriteFile(path, []byte("not-a-key"), 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-	if _, err := LoadKeyFile(path); err == nil {
-		t.Error("LoadKeyFile(garbage) succeeded, want error")
-	}
-	if err := SaveKeyFile("", APIKey{KeyID: "x", Secret: "y"}); err == nil {
-		t.Error("SaveKeyFile(\"\") succeeded, want error")
 	}
 }
 

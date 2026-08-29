@@ -31,23 +31,11 @@ contract lives in the pos repo: `docs/Print-service.md` (device side) and
 | Env var                  | Required | Default | Meaning                                                             |
 |--------------------------|----------|---------|---------------------------------------------------------------------|
 | `POS_BASE_URL`           | yes      | —       | POS API base URL, e.g. `https://api.kayord.com` (no trailing slash) |
-| `POS_API_KEY`            | yes*     | —       | `kpos_{keyId}.{secret}` — created by an outlet manager in the POS admin UI |
-| `POS_API_KEY_FILE`       | yes*     | —       | File holding the current key (chmod 600). Use *either* this or `POS_API_KEY` |
+| `POS_API_KEY`            | yes      | —       | `kpos_{keyId}.{secret}` — created by an outlet manager in the POS admin UI |
 | `LOG_LEVEL`              | no       | `info`  | `debug` \| `info` \| `warn` \| `error`                              |
 | `PROBE_INTERVAL_SECONDS` | no       | `30`    | Printer reachability probe interval                                 |
 
-\* One of the two is required. Prefer `POS_API_KEY_FILE`: when set, a key
-rotated by the server is persisted there automatically — the device is
-self-managing after the initial setup. Only the public key id (the part
-before `.`) is ever logged.
-
-### Key rotation
-
-Managers rotate a key in the POS admin UI; the server pushes the new key to
-the connected device (`RotateKey`), the device persists it to
-`POS_API_KEY_FILE` and acknowledges (`ReportKeyRotated`), and the server
-then revokes the old key — no site visit. Rotation requires the device to
-have been started with `POS_API_KEY_FILE`.
+Only the public key id (the part before `.`) is ever logged.
 
 ## Development
 

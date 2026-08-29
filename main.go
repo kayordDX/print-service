@@ -15,7 +15,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -44,31 +43,21 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	// The key comes from the environment or, failing that, from a key file
-	// written by a previous rotation.
-	apiKey := cfg.APIKey
-	if apiKey.Secret == "" {
-		apiKey, err = config.LoadKeyFile(cfg.KeyFile)
-		if err != nil {
-			return err
-		}
-	}
 
 	logger := newLogger(cfg.LogLevel)
 	slog.SetDefault(logger)
 	// Only the public key id is logged — never the secret.
 	logger.Info("starting print-service",
-		"keyId", apiKey.KeyID, "baseURL", cfg.BaseURL, "probeInterval", cfg.ProbeInterval)
+		"keyId", cfg.APIKey.KeyID, "baseURL", cfg.BaseURL, "probeInterval", cfg.ProbeInterval)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	app := newApp(cfg, logger, apiKey)
+	app := newApp(cfg, logger)
 
-	hub, err := hubclient.New(ctx, cfg.BaseURL, app.currentKey, hubclient.Callbacks{
+	hub, err := hubclient.New(ctx, cfg.BaseURL, cfg.APIKey.Bearer(), hubclient.Callbacks{
 		OnPrint:        app.dispatchPrint,
 		OnSyncPrinters: app.probeStore.Set,
-		OnRotateKey:    app.rotateKey,
 	}, logger)
 	if err != nil {
 		return err
@@ -95,26 +84,17 @@ type app struct {
 	probeStore *probe.Store
 	prober     *probe.Prober
 	prints     *printqueue.Queue
-	apiKey     atomic.Value // config.APIKey; swapped on rotation
 }
 
-func newApp(cfg config.Config, logger *slog.Logger, apiKey config.APIKey) *app {
+func newApp(cfg config.Config, logger *slog.Logger) *app {
 	a := &app{
 		cfg:        cfg,
 		logger:     logger,
 		probeStore: probe.NewStore(),
-		apiKey:     atomic.Value{},
 	}
-	a.apiKey.Store(apiKey)
 	a.prints = printqueue.New(context.Background(), a.handlePrintJob, logger)
 	a.prober = probe.NewProber(a.probeStore, cfg.ProbeInterval, a.reportProbe, a.hubConnected, logger)
 	return a
-}
-
-// currentKey returns the active API key; consulted on every connection
-// attempt so a rotated key is used on the next (re)connect.
-func (a *app) currentKey() string {
-	return a.apiKey.Load().(config.APIKey).Bearer()
 }
 
 // hubConnected reports whether scan results and probe reports can currently
@@ -165,26 +145,6 @@ func (a *app) handlePrintJob(ctx context.Context, msg model.PrintMessage) {
 		}
 		a.hub.ReportPrintResult(msg.JobID, err == nil, detail)
 	}
-}
-
-// rotateKey persists a server-pushed replacement key and acknowledges it.
-// Without a configured key file there is nowhere to persist the key, so the
-// rotation is rejected (naked) and the device keeps the current one.
-func (a *app) rotateKey(newAPIKey string) {
-	key, err := config.ParseAPIKey(newAPIKey)
-	if err != nil {
-		a.logger.Error("rejecting invalid rotated key", "error", err)
-		a.hub.ReportKeyRotated(false)
-		return
-	}
-	if err := config.SaveKeyFile(a.cfg.KeyFile, key); err != nil {
-		a.logger.Error("rejecting rotated key", "error", err)
-		a.hub.ReportKeyRotated(false)
-		return
-	}
-	a.apiKey.Store(key)
-	a.logger.Info("API key rotated", "keyId", key.KeyID)
-	a.hub.ReportKeyRotated(true)
 }
 
 // runScan performs a native network scan and reports start and result to
