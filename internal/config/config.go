@@ -66,8 +66,10 @@ type Config struct {
 	// e.g. "https://api.kayord.com".
 	BaseURL string
 
-	// APIKey authenticates this device against the POS API.
-	APIKey APIKey
+	// APIKeys authenticates the app instances against the POS API, one per
+	// outlet the process serves. Each key binds an instance to its outlet
+	// server-side.
+	APIKeys []APIKey
 
 	// LogLevel is one of "debug", "info", "warn" or "error".
 	LogLevel string
@@ -94,16 +96,11 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, fmt.Errorf("POS_BASE_URL %q is not a valid http(s) URL", cfg.BaseURL))
 	}
 
-	rawKey := strings.TrimSpace(getenv("POS_API_KEY"))
-	if rawKey == "" {
-		errs = append(errs, fmt.Errorf("POS_API_KEY is required (create one in the POS admin UI)"))
+	keys, err := parseAPIKeys(strings.TrimSpace(getenv("POS_API_KEY")), strings.TrimSpace(getenv("POS_API_KEYS")))
+	if err != nil {
+		errs = append(errs, err)
 	} else {
-		key, err := ParseAPIKey(rawKey)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("POS_API_KEY: %w", err))
-		} else {
-			cfg.APIKey = key
-		}
+		cfg.APIKeys = keys
 	}
 
 	cfg.LogLevel = strings.ToLower(strings.TrimSpace(getenv("LOG_LEVEL")))
@@ -129,6 +126,36 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+// parseAPIKeys resolves the configured keys. POS_API_KEYS holds a
+// comma-separated list of keys (one per outlet served by this process);
+// POS_API_KEY is the single-key shorthand. Setting both is ambiguous and
+// rejected, as is a malformed key anywhere in the list.
+func parseAPIKeys(single, list string) ([]APIKey, error) {
+	switch {
+	case single != "" && list != "":
+		return nil, fmt.Errorf("POS_API_KEY and POS_API_KEYS are mutually exclusive: set only one")
+	case single != "":
+		key, err := ParseAPIKey(single)
+		if err != nil {
+			return nil, fmt.Errorf("POS_API_KEY: %w", err)
+		}
+		return []APIKey{key}, nil
+	case list != "":
+		items := strings.Split(list, ",")
+		keys := make([]APIKey, 0, len(items))
+		for i, item := range items {
+			key, err := ParseAPIKey(strings.TrimSpace(item))
+			if err != nil {
+				return nil, fmt.Errorf("POS_API_KEYS[%d]: %w", i, err)
+			}
+			keys = append(keys, key)
+		}
+		return keys, nil
+	default:
+		return nil, fmt.Errorf("POS_API_KEY is required (or POS_API_KEYS for multiple outlets; create keys in the POS admin UI)")
+	}
 }
 
 func joinErrs(errs []error) error {

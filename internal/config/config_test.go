@@ -24,17 +24,91 @@ func TestLoadValid(t *testing.T) {
 	if cfg.BaseURL != "https://api.kayord.com" {
 		t.Errorf("BaseURL = %q, want trailing slash trimmed", cfg.BaseURL)
 	}
-	if cfg.APIKey.KeyID != "pk_8f3a91c2" {
-		t.Errorf("KeyID = %q", cfg.APIKey.KeyID)
+	if cfg.APIKeys[0].KeyID != "pk_8f3a91c2" {
+		t.Errorf("KeyID = %q", cfg.APIKeys[0].KeyID)
 	}
-	if cfg.APIKey.Bearer() != "kpos_pk_8f3a91c2.c2VjcmV0c2VjcmV0c2Vjcg" {
-		t.Errorf("Bearer() = %q", cfg.APIKey.Bearer())
+	if cfg.APIKeys[0].Bearer() != "kpos_pk_8f3a91c2.c2VjcmV0c2VjcmV0c2Vjcg" {
+		t.Errorf("Bearer() = %q", cfg.APIKeys[0].Bearer())
 	}
 	if cfg.LogLevel != "debug" {
 		t.Errorf("LogLevel = %q, want lowercased", cfg.LogLevel)
 	}
 	if cfg.ProbeInterval != 15*time.Second {
 		t.Errorf("ProbeInterval = %v, want 15s", cfg.ProbeInterval)
+	}
+}
+
+func TestLoadAPIKeys(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		env      map[string]string
+		wantIDs  []string
+		wantErrs []string // substrings; every one must appear in the error
+	}{
+		{
+			name:    "single shorthand",
+			env:     map[string]string{"POS_BASE_URL": "https://api", "POS_API_KEY": "kpos_pk_a.b"},
+			wantIDs: []string{"pk_a"},
+		},
+		{
+			name:    "single key in list",
+			env:     map[string]string{"POS_BASE_URL": "https://api", "POS_API_KEYS": "kpos_pk_a.b"},
+			wantIDs: []string{"pk_a"},
+		},
+		{
+			name:    "multiple keys",
+			env:     map[string]string{"POS_BASE_URL": "https://api", "POS_API_KEYS": "kpos_pk_a.b,kpos_pk_c.d"},
+			wantIDs: []string{"pk_a", "pk_c"},
+		},
+		{
+			name:    "stray whitespace is trimmed",
+			env:     map[string]string{"POS_BASE_URL": "https://api", "POS_API_KEYS": "  kpos_pk_a.b ,  kpos_pk_c.d  "},
+			wantIDs: []string{"pk_a", "pk_c"},
+		},
+		{
+			name:     "both vars set",
+			env:      map[string]string{"POS_BASE_URL": "https://api", "POS_API_KEY": "kpos_pk_a.b", "POS_API_KEYS": "kpos_pk_c.d"},
+			wantErrs: []string{"mutually exclusive"},
+		},
+		{
+			name:     "malformed item",
+			env:      map[string]string{"POS_BASE_URL": "https://api", "POS_API_KEYS": "kpos_pk_a.b,nonsense"},
+			wantErrs: []string{"POS_API_KEYS[1]", `must start with "kpos_"`},
+		},
+		{
+			name:     "empty item",
+			env:      map[string]string{"POS_BASE_URL": "https://api", "POS_API_KEYS": "kpos_pk_a.b,"},
+			wantErrs: []string{"POS_API_KEYS[1]"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg, err := Load(getenvWith(tt.env))
+			if len(tt.wantErrs) > 0 {
+				if err == nil {
+					t.Fatalf("Load() succeeded, want error containing %q", tt.wantErrs)
+				}
+				for _, want := range tt.wantErrs {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("Load() error = %v, want it to contain %q", err, want)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if len(cfg.APIKeys) != len(tt.wantIDs) {
+				t.Fatalf("len(APIKeys) = %d, want %d", len(cfg.APIKeys), len(tt.wantIDs))
+			}
+			for i, want := range tt.wantIDs {
+				if cfg.APIKeys[i].KeyID != want {
+					t.Errorf("APIKeys[%d].KeyID = %q, want %q", i, cfg.APIKeys[i].KeyID, want)
+				}
+			}
+		})
 	}
 }
 

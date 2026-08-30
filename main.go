@@ -47,9 +47,13 @@ func run() error {
 
 	logger := newLogger(cfg.LogLevel)
 	slog.SetDefault(logger)
-	// Only the public key id is logged — never the secret.
+	keyIDs := make([]string, len(cfg.APIKeys))
+	for i, key := range cfg.APIKeys {
+		keyIDs[i] = key.KeyID
+	}
+	// Only the public key ids are logged — never the secrets.
 	logger.Info("starting print-service",
-		"keyId", cfg.APIKey.KeyID, "baseURL", cfg.BaseURL, "probeInterval", cfg.ProbeInterval)
+		"keyIds", keyIDs, "baseURL", cfg.BaseURL, "probeInterval", cfg.ProbeInterval)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -58,28 +62,47 @@ func run() error {
 	// been up when the server asks for it.
 	start := time.Now()
 
-	app := newApp(ctx, cfg, logger, start)
-
-	hub, err := hubclient.New(ctx, cfg.BaseURL, cfg.APIKey.Bearer(), hubclient.Callbacks{
-		OnPrint:             app.dispatchPrint,
-		OnSyncPrinters:      app.probeStore.Set,
-		OnRequestDeviceInfo: app.reportDeviceInfo,
-	}, logger)
-	if err != nil {
-		return err
+	apps := make([]*app, 0, len(cfg.APIKeys))
+	for _, key := range cfg.APIKeys {
+		a, err := newAppForKey(ctx, cfg, logger, start, key)
+		if err != nil {
+			return err
+		}
+		apps = append(apps, a)
 	}
-	app.hub = hub
 
 	// Print jobs run on one worker per printer (a slow printer must never
 	// delay the others); scans run in their own goroutines.
-	go app.prober.Run(ctx)
-
-	hub.Start()
+	for _, a := range apps {
+		go a.prober.Run(ctx)
+		a.hub.Start()
+	}
 
 	<-ctx.Done()
 	logger.Info("shutting down")
-	hub.Stop()
+	for _, a := range apps {
+		a.hub.Stop()
+	}
 	return nil
+}
+
+// newAppForKey wires one self-contained app instance for a single API key:
+// its own hub client, probe store, prober and print queue. The probe store
+// must stay per key: a shared one would let one outlet's SyncPrinters
+// overwrite another outlet's printer set.
+func newAppForKey(ctx context.Context, cfg config.Config, logger *slog.Logger, start time.Time, key config.APIKey) (*app, error) {
+	keyLogger := logger.With("keyId", key.KeyID)
+	a := newApp(ctx, cfg, keyLogger, start)
+	hub, err := hubclient.New(ctx, cfg.BaseURL, key.Bearer(), hubclient.Callbacks{
+		OnPrint:             a.dispatchPrint,
+		OnSyncPrinters:      a.probeStore.Set,
+		OnRequestDeviceInfo: a.reportDeviceInfo,
+	}, keyLogger)
+	if err != nil {
+		return nil, err
+	}
+	a.hub = hub
+	return a, nil
 }
 
 // app glues the hub callbacks to the printer, scanner and prober.
