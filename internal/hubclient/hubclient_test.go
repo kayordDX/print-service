@@ -30,8 +30,8 @@ type printResult struct {
 }
 
 // testHub mimics Pos.Api's PrinterHub just enough to exercise the wire
-// contract end to end: it sends ReceivePrint/SyncPrinters to whoever asks
-// (Ping) and records everything the device reports.
+// contract end to end: it sends ReceivePrint/SyncPrinters/RequestDeviceInfo
+// to whoever asks (Ping) and records everything the device reports.
 type testHub struct {
 	signalr.Hub
 
@@ -43,13 +43,15 @@ type testHub struct {
 	scanResults  []string
 	probes       []probeReport
 	printResults []printResult
+	deviceInfos  []model.DeviceInfo
 }
 
 // Ping is invoked by the device once it is connected; the hub answers with
-// the print job and printer assignment.
+// the print job, printer assignment and a device info request.
 func (h *testHub) Ping() {
 	h.Clients().Caller().Send("ReceivePrint", h.print)
 	h.Clients().Caller().Send("SyncPrinters", h.targets)
+	h.Clients().Caller().Send("RequestDeviceInfo")
 }
 
 func (h *testHub) ReportScanStarted() {
@@ -76,10 +78,22 @@ func (h *testHub) ReportPrintResult(jobID string, ok bool, detail string) {
 	h.printResults = append(h.printResults, printResult{jobID, ok, detail})
 }
 
+func (h *testHub) ReportDeviceInfo(info model.DeviceInfo) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.deviceInfos = append(h.deviceInfos, info)
+}
+
 func (h *testHub) snapshot() (int, []string, []probeReport, []printResult) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.scanStarted, h.scanResults, h.probes, h.printResults
+}
+
+func (h *testHub) deviceInfoReports() []model.DeviceInfo {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]model.DeviceInfo(nil), h.deviceInfos...)
 }
 
 // startTestServer serves the hub over HTTP on a random local port.
@@ -117,8 +131,8 @@ func waitFor(t *testing.T, what string, done func() bool) {
 
 // TestIntegrationRoundTrip connects the real client to a real (in-process)
 // SignalR server and verifies the full contract: receiving a print job with
-// base64-decoded byte chunks, receiving the printer assignment, and
-// reporting scans, probes and print results back.
+// base64-decoded byte chunks, receiving the printer assignment, answering a
+// device info request, and reporting scans, probes and print results back.
 func TestIntegrationRoundTrip(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -139,9 +153,11 @@ func TestIntegrationRoundTrip(t *testing.T) {
 
 	prints := make(chan model.PrintMessage, 1)
 	syncs := make(chan []model.PrinterTarget, 1)
+	infoReqs := make(chan struct{}, 1)
 	client, err := New(ctx, baseURL, "kpos_pk_8f3a91c2.supersecret", Callbacks{
-		OnPrint:        func(m model.PrintMessage) { prints <- m },
-		OnSyncPrinters: func(targets []model.PrinterTarget) { syncs <- targets },
+		OnPrint:             func(m model.PrintMessage) { prints <- m },
+		OnSyncPrinters:      func(targets []model.PrinterTarget) { syncs <- targets },
+		OnRequestDeviceInfo: func() { infoReqs <- struct{}{} },
 	}, slog.Default())
 	if err != nil {
 		t.Fatalf("New(): %v", err)
@@ -173,12 +189,26 @@ func TestIntegrationRoundTrip(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("timed out waiting for SyncPrinters")
 	}
+	select {
+	case <-infoReqs:
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for RequestDeviceInfo")
+	}
 
 	// Device -> server reporting.
 	client.ReportPrinterProbe(7, true, 12)
 	client.ReportScanStarted()
 	client.ReportScanResult("scan output")
 	client.ReportPrintResult("job-42", true, "")
+	client.ReportDeviceInfo(model.DeviceInfo{
+		Hostname:      "pi-front",
+		Platform:      "linux/arm64",
+		NumCPU:        4,
+		UptimeSeconds: 90,
+		Interfaces: []model.DeviceInterface{
+			{Name: "eth0", IPv4: []string{"192.168.1.23"}},
+		},
+	})
 
 	waitFor(t, "ReportPrinterProbe", func() bool {
 		_, _, probes, _ := hub.snapshot()
@@ -191,5 +221,18 @@ func TestIntegrationRoundTrip(t *testing.T) {
 	waitFor(t, "ReportPrintResult", func() bool {
 		_, _, _, printResults := hub.snapshot()
 		return len(printResults) == 1 && printResults[0] == printResult{"job-42", true, ""}
+	})
+	waitFor(t, "ReportDeviceInfo", func() bool {
+		reports := hub.deviceInfoReports()
+		want := model.DeviceInfo{
+			Hostname:      "pi-front",
+			Platform:      "linux/arm64",
+			NumCPU:        4,
+			UptimeSeconds: 90,
+			Interfaces: []model.DeviceInterface{
+				{Name: "eth0", IPv4: []string{"192.168.1.23"}},
+			},
+		}
+		return len(reports) == 1 && reflect.DeepEqual(reports[0], want)
 	})
 }
