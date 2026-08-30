@@ -31,13 +31,13 @@ contract lives in the pos repo: `docs/Print-service.md` (device side) and
 
 ## Configuration
 
-| Env var                  | Required | Default | Meaning                                                                    |
-| ------------------------ | -------- | ------- | -------------------------------------------------------------------------- |
-| `POS_BASE_URL`           | yes      | —       | POS API base URL, e.g. `https://api.kayord.com` (no trailing slash)        |
-| `POS_API_KEY`            | one of   | —       | `kpos_{keyId}.{secret}` — single-key shorthand; created by an outlet manager in the POS admin UI |
+| Env var                  | Required | Default | Meaning                                                                                                                         |
+| ------------------------ | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `POS_BASE_URL`           | yes      | —       | POS API base URL, e.g. `https://api.kayord.com` (no trailing slash)                                                             |
+| `POS_API_KEY`            | one of   | —       | `kpos_{keyId}.{secret}` — single-key shorthand; created by an outlet manager in the POS admin UI                                |
 | `POS_API_KEYS`           | one of   | —       | Comma-separated list of `kpos_{keyId}.{secret}` keys — serves multiple outlets from one process; error if both key vars are set |
-| `LOG_LEVEL`              | no       | `info`  | `debug` \| `info` \| `warn` \| `error`                                     |
-| `PROBE_INTERVAL_SECONDS` | no       | `30`    | Printer reachability probe interval                                        |
+| `LOG_LEVEL`              | no       | `info`  | `debug` \| `info` \| `warn` \| `error`                                                                                          |
+| `PROBE_INTERVAL_SECONDS` | no       | `30`    | Printer reachability probe interval                                                                                             |
 
 One of `POS_API_KEY` or `POS_API_KEYS` is required. With `POS_API_KEYS` the
 process runs one fully independent app instance per key — its own hub
@@ -55,6 +55,11 @@ see `.mise.toml`. With mise installed, it is fetched automatically:
 mise install        # installs the pinned Go version (project-local)
 mise run all        # fmt + vet + test + build
 mise run dev        # run the service locally
+```
+
+```bash
+# Ezample run
+POS_BASE_URL=http://localhost:5117 POS_API_KEY=kpos_pk_5aa55509.R83jq_xEvBb3iTc-qiECHrU_9PzWqlNeMZWUun14v5I mise dev
 ```
 
 Or the native go way (equivalent, once the pinned toolchain is active via
