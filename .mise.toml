@@ -33,12 +33,16 @@ run = "go mod tidy"
 # ---- release ----
 
 [tasks.build-all]
-description = "Cross-compile fully static release binaries for all target devices"
+description = "Cross-compile fully static release binaries for all targets (same matrix as the Release workflow)"
 dir = "{{config_root}}"
 run = """
 CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=6 go build -trimpath -ldflags '-s -w' -o dist/print-service-linux-armv6 .
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags '-s -w' -o dist/print-service-linux-arm64 .
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags '-s -w' -o dist/print-service-linux-amd64 .
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags '-s -w' -o dist/print-service-windows-amd64.exe .
+CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -trimpath -ldflags '-s -w' -o dist/print-service-windows-arm64.exe .
+CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags '-s -w' -o dist/print-service-darwin-amd64 .
+CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags '-s -w' -o dist/print-service-darwin-arm64 .
 """
 
 [tasks.docker]
