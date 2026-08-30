@@ -1,0 +1,11 @@
+services:
+  escpos-netprinter:
+    image: gilbertfl/escpos-netprinter:3.2
+    restart: unless-stopped
+    ports:
+      - "515:515/tcp"
+      - "8000:80/tcp"
+      - "9100:9100/tcp"
+    environment:
+      ESCPOS_TIMEZONE: "Africa/Johannesburg"
+      ESCPOS_DEBUG: false

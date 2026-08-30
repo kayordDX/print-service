@@ -6,3 +6,5 @@
 # Local environment files (contain POS_API_KEY)
 .env
 .env.*
+Logs/
+obj/
