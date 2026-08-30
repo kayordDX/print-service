@@ -1,0 +1,102 @@
+# Builds fully static release binaries for every supported platform and
+# attaches them to a GitHub Release. Runs on vX.Y.Z tags; workflow_dispatch
+# builds artifacts without publishing a release (for testing the matrix).
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: go test ./...
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux: Pi Zero 1 (armv6), Pi Zero 2 W / Pi 4/5 (arm64), x86-64
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: linux, goarch: arm, goarm: '6' }
+          # Windows back-office machines, incl. Windows on ARM
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+          # macOS: Intel and Apple Silicon
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+    name: build ${{ matrix.goos }}/${{ matrix.goarch }}${{ matrix.goarm && format('-v{0}', matrix.goarm) || '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          slug="${GOOS}-${GOARCH}"
+          if [ -n "${GOARM:-}" ]; then slug="${GOOS}-armv${GOARM}"; fi
+          ext=""
+          if [ "$GOOS" = "windows" ]; then ext=".exe"; fi
+          binary="print-service-${slug}${ext}"
+          CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o "$binary" .
+          if [ "$GOOS" = "windows" ]; then
+            zip -q "print-service-${version}-${slug}.zip" "$binary"
+          else
+            tar czf "print-service-${version}-${slug}.tar.gz" "$binary"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: print-service-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            *.zip
+            *.tar.gz
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: dist
+
+      - name: Attach binaries to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

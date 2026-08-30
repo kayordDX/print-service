@@ -1,28 +1,24 @@
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
-WORKDIR /app
-EXPOSE 5013
-
-ENV ASPNETCORE_URLS=http://+:5013
-
-RUN apt-get update && \
-    apt-get install -y nmap && \
-    rm -rf /var/lib/apt/lists/*
-
-USER root
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
-ARG configuration=Release
+# Build stage: cross-compiles a fully static binary for the target platform.
+FROM --platform=$BUILDPLATFORM golang:1.27 AS build
+ARG TARGETOS TARGETARCH
 WORKDIR /src
-COPY ["print-service.csproj", "./"]
-RUN dotnet restore "print-service.csproj"
+
+# Cache module downloads between builds.
+COPY go.mod go.sum ./
+RUN go mod download
+
 COPY . .
-WORKDIR "/src/."
-RUN dotnet build "print-service.csproj" -c $configuration -o /app/build
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath -ldflags "-s -w" -o /print-service .
 
-FROM build AS publish
-ARG configuration=Release
-RUN dotnet publish "print-service.csproj" -c $configuration -o /app/publish /p:UseAppHost=false
+# Runtime stage: empty image, nothing but the static binary and CA
+# certificates for the outbound HTTPS connection. Works for every target
+# platform (including arm/v6 for the Pi Zero) because the binary is static.
+FROM scratch
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=build /print-service /print-service
 
-FROM base AS final
-WORKDIR /app
-COPY --from=publish /app/publish .
-ENTRYPOINT ["dotnet", "print-service.dll"]
+# Unprivileged runtime user.
+USER 65532:65532
+
+ENTRYPOINT ["/print-service"]
