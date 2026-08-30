@@ -28,12 +28,12 @@ contract lives in the pos repo: `docs/Print-service.md` (device side) and
 
 ## Configuration
 
-| Env var                  | Required | Default | Meaning                                                             |
-|--------------------------|----------|---------|---------------------------------------------------------------------|
-| `POS_BASE_URL`           | yes      | —       | POS API base URL, e.g. `https://api.kayord.com` (no trailing slash) |
+| Env var                  | Required | Default | Meaning                                                                    |
+| ------------------------ | -------- | ------- | -------------------------------------------------------------------------- |
+| `POS_BASE_URL`           | yes      | —       | POS API base URL, e.g. `https://api.kayord.com` (no trailing slash)        |
 | `POS_API_KEY`            | yes      | —       | `kpos_{keyId}.{secret}` — created by an outlet manager in the POS admin UI |
-| `LOG_LEVEL`              | no       | `info`  | `debug` \| `info` \| `warn` \| `error`                              |
-| `PROBE_INTERVAL_SECONDS` | no       | `30`    | Printer reachability probe interval                                 |
+| `LOG_LEVEL`              | no       | `info`  | `debug` \| `info` \| `warn` \| `error`                                     |
+| `PROBE_INTERVAL_SECONDS` | no       | `30`    | Printer reachability probe interval                                        |
 
 Only the public key id (the part before `.`) is ever logged.
 
@@ -116,37 +116,6 @@ services:
     image: ghcr.io/kayorddx/print-service:latest
     environment:
       POS_BASE_URL: https://api.kayord.com
-      POS_API_KEY: kpos_pk_xxxx.yyyy   # create in POS admin UI
+      POS_API_KEY: kpos_pk_xxxx.yyyy # create in POS admin UI
     restart: unless-stopped
 ```
-
-## Local testing
-
-1. Run the POS API locally (pos repo, `aspire` branch or later) and create a
-   print service key as a manager (admin UI or Swagger `POST /printerservicekey`).
-2. Fake printer: `nc -lk 9100` in another terminal (or a real EPSON on the LAN).
-3. Start the service:
-
-   ```bash
-   POS_BASE_URL=http://localhost:5117 POS_API_KEY=kpos_... mise run dev
-   # or: POS_BASE_URL=... POS_API_KEY=... go run .
-   ```
-
-4. Verify:
-   - [ ] Server logs show the hub connection + `SyncPrinters` payload
-   - [ ] POS admin printers page shows the device online **live**
-   - [ ] `POST /printer/test` prints on the fake/real printer
-   - [ ] `POST /printer/scan` → scan starts and results appear (no nmap
-         installed — proves the native scan path)
-   - [ ] Probes reported; unplugging a printer flips `PrinterReachable`
-         within one interval
-   - [ ] Kill the network for 30s → the service reconnects by itself
-   - [ ] Revoked key → connection dropped and cannot re-establish
-
-## How reconnect works
-
-The SignalR client is created with a connector factory and exponential
-backoff with **no give-up time** — an unattended device retries forever.
-The server re-joins the connection to its groups on every (re)connect, so
-there is no resubscribe logic. Print jobs and probes that happen while
-disconnected are simply not reported until the next round.
