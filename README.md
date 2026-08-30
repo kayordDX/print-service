@@ -34,9 +34,15 @@ contract lives in the pos repo: `docs/Print-service.md` (device side) and
 | Env var                  | Required | Default | Meaning                                                                    |
 | ------------------------ | -------- | ------- | -------------------------------------------------------------------------- |
 | `POS_BASE_URL`           | yes      | —       | POS API base URL, e.g. `https://api.kayord.com` (no trailing slash)        |
-| `POS_API_KEY`            | yes      | —       | `kpos_{keyId}.{secret}` — created by an outlet manager in the POS admin UI |
+| `POS_API_KEY`            | one of   | —       | `kpos_{keyId}.{secret}` — single-key shorthand; created by an outlet manager in the POS admin UI |
+| `POS_API_KEYS`           | one of   | —       | Comma-separated list of `kpos_{keyId}.{secret}` keys — serves multiple outlets from one process; error if both key vars are set |
 | `LOG_LEVEL`              | no       | `info`  | `debug` \| `info` \| `warn` \| `error`                                     |
 | `PROBE_INTERVAL_SECONDS` | no       | `30`    | Printer reachability probe interval                                        |
+
+One of `POS_API_KEY` or `POS_API_KEYS` is required. With `POS_API_KEYS` the
+process runs one fully independent app instance per key — its own hub
+connection, probe store and print queue — so several outlets can share one
+box; log lines carry the `keyId` of the instance they belong to.
 
 Only the public key id (the part before `.`) is ever logged.
 
