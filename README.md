@@ -58,7 +58,9 @@ mise run dev        # run the service locally
 ```
 
 ```bash
-# Ezample run
+# Run Compose
+docker compose up -d
+# Example run
 POS_BASE_URL=http://localhost:5117 POS_API_KEY=kpos_pk_5aa55509.R83jq_xEvBb3iTc-qiECHrU_9PzWqlNeMZWUun14v5I mise dev
 ```
 
