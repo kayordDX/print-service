@@ -8,7 +8,9 @@ connects **outbound** to the POS API's SignalR hub (`/printer-hub`), and:
   printers (raw TCP, port 9100),
 - performs network scans **natively** (concurrent TCP dials — no nmap, no
   root), when the server sends a scan request,
-- probes the printers assigned to it and reports reachability live.
+- probes the printers assigned to it and reports reachability live,
+- answers device info requests with its platform, host name, current IP
+  addresses, versions and uptime (diagnostics for the POS admin UI).
 
 This is a complete rewrite of the former .NET/Redis service. The wire
 contract lives in the pos repo: `docs/Print-service.md` (device side) and

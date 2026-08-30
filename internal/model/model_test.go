@@ -68,3 +68,44 @@ func TestPrinterTargetRoundTrip(t *testing.T) {
 		t.Errorf("targets = %+v", targets)
 	}
 }
+
+func TestDeviceInfoMarshalMatchesDotNet(t *testing.T) {
+	t.Parallel()
+	info := DeviceInfo{
+		Hostname:      "pi-front",
+		Platform:      "linux/arm64",
+		OSVersion:     "Debian GNU/Linux 12 (bookworm)",
+		GoVersion:     "go1.27.0",
+		AppVersion:    "v1.4.2",
+		NumCPU:        4,
+		UptimeSeconds: 5400,
+		Interfaces: []DeviceInterface{
+			{Name: "eth0", MAC: "e4:5f:01:aa:bb:cc", IPv4: []string{"192.168.1.23"}},
+			{Name: "wlan0", IPv6: []string{"fe80::1234"}},
+		},
+	}
+	got, err := json.Marshal(info)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	want := `{"hostname":"pi-front","platform":"linux/arm64",` +
+		`"osVersion":"Debian GNU/Linux 12 (bookworm)","goVersion":"go1.27.0",` +
+		`"appVersion":"v1.4.2","numCpu":4,"uptimeSeconds":5400,` +
+		`"interfaces":[{"name":"eth0","mac":"e4:5f:01:aa:bb:cc","ipv4":["192.168.1.23"]},` +
+		`{"name":"wlan0","ipv6":["fe80::1234"]}]}`
+	if string(got) != want {
+		t.Errorf("json.Marshal() =\n  %s\nwant\n  %s", got, want)
+	}
+}
+
+func TestDeviceInfoOmitEmptyFields(t *testing.T) {
+	t.Parallel()
+	got, err := json.Marshal(DeviceInfo{Hostname: "box", Platform: "windows/amd64", NumCPU: 8})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	want := `{"hostname":"box","platform":"windows/amd64","numCpu":8,"uptimeSeconds":0}`
+	if string(got) != want {
+		t.Errorf("json.Marshal() = %s, want %s", got, want)
+	}
+}

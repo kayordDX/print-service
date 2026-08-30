@@ -30,6 +30,10 @@ type Callbacks struct {
 	// OnSyncPrinters is called whenever the server assigns this device its
 	// printer set (on connect and whenever the set changes).
 	OnSyncPrinters func([]model.PrinterTarget)
+	// OnRequestDeviceInfo is called when the server asks this device to
+	// report its platform, network addresses and versions (diagnostics).
+	// The implementation answers by calling Client.ReportDeviceInfo.
+	OnRequestDeviceInfo func()
 }
 
 // Receiver implements the server -> device hub methods. Method names must
@@ -51,6 +55,17 @@ func (r *Receiver) ReceivePrint(msg model.PrintMessage) {
 		"action", msg.Action, "printerName", msg.PrinterName,
 		"ip", msg.IPAddress, "port", msg.Port, "chunks", len(msg.PrintInstructions))
 	r.callbacks.OnPrint(msg)
+}
+
+// RequestDeviceInfo is invoked by the server to ask for a device report
+// (platform, current IP addresses, versions, uptime). The report goes back
+// asynchronously via ReportDeviceInfo.
+func (r *Receiver) RequestDeviceInfo() {
+	if r.callbacks.OnRequestDeviceInfo == nil {
+		return
+	}
+	r.logger.Info("device info requested")
+	r.callbacks.OnRequestDeviceInfo()
 }
 
 // SyncPrinters is invoked by the server with the printers this device is
@@ -151,6 +166,13 @@ func (c *Client) ReportPrinterProbe(printerID int, reachable bool, latencyMillis
 // can track success/failure and dedup. Invokes PrinterHub.ReportPrintResult.
 func (c *Client) ReportPrintResult(jobID string, ok bool, detail string) {
 	c.send("ReportPrintResult", jobID, ok, detail)
+}
+
+// ReportDeviceInfo answers a RequestDeviceInfo invocation with the device
+// report (platform, addresses, versions, uptime). Invokes
+// PrinterHub.ReportDeviceInfo.
+func (c *Client) ReportDeviceInfo(info model.DeviceInfo) {
+	c.send("ReportDeviceInfo", info)
 }
 
 // stateName maps client states to stable, human-readable log values.

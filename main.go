@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/kayorddx/print-service/internal/config"
+	"github.com/kayorddx/print-service/internal/deviceinfo"
 	"github.com/kayorddx/print-service/internal/hubclient"
 	"github.com/kayorddx/print-service/internal/model"
 	"github.com/kayorddx/print-service/internal/printer"
@@ -53,11 +54,16 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	app := newApp(ctx, cfg, logger)
+	// Remembered so the device report can state how long the service has
+	// been up when the server asks for it.
+	start := time.Now()
+
+	app := newApp(ctx, cfg, logger, start)
 
 	hub, err := hubclient.New(ctx, cfg.BaseURL, cfg.APIKey.Bearer(), hubclient.Callbacks{
-		OnPrint:        app.dispatchPrint,
-		OnSyncPrinters: app.probeStore.Set,
+		OnPrint:             app.dispatchPrint,
+		OnSyncPrinters:      app.probeStore.Set,
+		OnRequestDeviceInfo: app.reportDeviceInfo,
 	}, logger)
 	if err != nil {
 		return err
@@ -80,16 +86,18 @@ func run() error {
 type app struct {
 	ctx        context.Context
 	logger     *slog.Logger
+	start      time.Time
 	hub        *hubclient.Client
 	probeStore *probe.Store
 	prober     *probe.Prober
 	prints     *printqueue.Queue
 }
 
-func newApp(ctx context.Context, cfg config.Config, logger *slog.Logger) *app {
+func newApp(ctx context.Context, cfg config.Config, logger *slog.Logger, start time.Time) *app {
 	a := &app{
 		ctx:        ctx,
 		logger:     logger,
+		start:      start,
 		probeStore: probe.NewStore(),
 	}
 	a.prints = printqueue.New(ctx, a.handlePrintJob)
@@ -105,6 +113,17 @@ func (a *app) hubConnected() bool { return a.hub != nil && a.hub.Connected() }
 // the hub client.
 func (a *app) reportProbe(ctx context.Context, printerID int, reachable bool, latencyMillis int64) {
 	a.hub.ReportPrinterProbe(printerID, reachable, latencyMillis)
+}
+
+// reportDeviceInfo gathers the device report (platform, current IP
+// addresses, versions, uptime) and sends it to the server. Gathering is
+// fast, so it can run inline on the hub receive loop.
+func (a *app) reportDeviceInfo() {
+	info := deviceinfo.Gather(a.start)
+	a.logger.Info("reporting device info",
+		"hostname", info.Hostname, "platform", info.Platform,
+		"appVersion", info.AppVersion, "interfaces", len(info.Interfaces))
+	a.hub.ReportDeviceInfo(info)
 }
 
 // dispatchPrint routes one hub message: scans run in their own goroutine so
