@@ -21,6 +21,7 @@ Plain `go build ./...` / `go test ./...` are equivalent.
 
 ## Rules
 
+- Do not add comments unless it is a non-obvious implementation detail. The code should be self-documenting.
 - Every change must pass `mise run all`: gofmt-clean, vet-clean, all tests
   green, build succeeds.
 - Write table-driven tests next to the code (`*_test.go`). New code needs
@@ -29,8 +30,6 @@ Plain `go build ./...` / `go test ./...` are equivalent.
   no panics across package boundaries, no globals.
 - Stdlib first. The only allowed third-party dep is the SignalR client.
   Run `mise run tidy` after changing deps.
-- `internal/model` is the wire contract with Pos.Api. Keep it in sync with
-  `docs/Print-service.md` / `docs/Print.md` (kayordDX/pos repo, `aspire`
-  branch). Never rename JSON fields; the `"nmap"` action value is legacy
+- `internal/model` is the wire contract with Pos.Api. Never rename JSON fields; the `"nmap"` action value is legacy
   but load-bearing.
 - Never log secrets (API key secret); log the key id only.
