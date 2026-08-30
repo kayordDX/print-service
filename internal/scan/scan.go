@@ -187,7 +187,9 @@ func expandCIDR(ipnet *net.IPNet) ([]string, error) {
 	}
 	ones, bits := ipnet.Mask.Size()
 	hostBits := bits - ones
-	if 1<<hostBits > maxCandidates {
+	// Compare host bits directly: 1<<hostBits overflows 32-bit int (the
+	// armv6 build) for hostBits >= 32 and would silently skip the check.
+	if hostBits > 14 {
 		return nil, fmt.Errorf("range %q is too large to scan (max %d hosts)", ipnet.String(), maxCandidates)
 	}
 

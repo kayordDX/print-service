@@ -2,7 +2,6 @@ package printqueue
 
 import (
 	"context"
-	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -49,7 +48,7 @@ func TestSlowPrinterDoesNotBlockOthers(t *testing.T) {
 	handler, openGate := gatedHandler(t, &order, &mu)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	q := New(ctx, handler, slog.Default())
+	q := New(ctx, handler)
 	q.idle = time.Second
 
 	// "slow" jobs block until released; "fast" has no gate.
@@ -83,7 +82,7 @@ func TestJobsForSamePrinterRunInOrder(t *testing.T) {
 	handler, _ := gatedHandler(t, &order, &mu)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	q := New(ctx, handler, slog.Default())
+	q := New(ctx, handler)
 
 	for _, marker := range []string{"a", "b", "c"} {
 		if !q.Enqueue(job("10.0.0.1", 9100, marker)) {
@@ -117,7 +116,7 @@ func TestFullQueueIsRejected(t *testing.T) {
 	q := New(ctx, func(context.Context, model.PrintMessage) {
 		arrived <- struct{}{}
 		<-release
-	}, slog.Default())
+	})
 	q.size = 2
 
 	// First job is picked up by the worker (blocked in the handler), so the
@@ -146,7 +145,7 @@ func TestIdleWorkerIsReplaced(t *testing.T) {
 	processed := make(chan string, 4)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	q := New(ctx, func(_ context.Context, msg model.PrintMessage) { processed <- msg.PrinterName }, slog.Default())
+	q := New(ctx, func(_ context.Context, msg model.PrintMessage) { processed <- msg.PrinterName })
 	q.idle = 20 * time.Millisecond
 
 	if !q.Enqueue(job("10.0.0.1", 9100, "first")) {
@@ -198,7 +197,7 @@ func TestFallbackPortSharesOneWorker(t *testing.T) {
 	q := New(ctx, func(context.Context, model.PrintMessage) {
 		arrived <- struct{}{}
 		<-release
-	}, slog.Default())
+	})
 	q.size = 2
 
 	if !q.Enqueue(job("10.0.0.7", 0, "no-port")) {

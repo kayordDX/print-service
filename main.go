@@ -53,7 +53,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	app := newApp(cfg, logger)
+	app := newApp(ctx, cfg, logger)
 
 	hub, err := hubclient.New(ctx, cfg.BaseURL, cfg.APIKey.Bearer(), hubclient.Callbacks{
 		OnPrint:        app.dispatchPrint,
@@ -78,7 +78,7 @@ func run() error {
 
 // app glues the hub callbacks to the printer, scanner and prober.
 type app struct {
-	cfg        config.Config
+	ctx        context.Context
 	logger     *slog.Logger
 	hub        *hubclient.Client
 	probeStore *probe.Store
@@ -86,13 +86,13 @@ type app struct {
 	prints     *printqueue.Queue
 }
 
-func newApp(cfg config.Config, logger *slog.Logger) *app {
+func newApp(ctx context.Context, cfg config.Config, logger *slog.Logger) *app {
 	a := &app{
-		cfg:        cfg,
+		ctx:        ctx,
 		logger:     logger,
 		probeStore: probe.NewStore(),
 	}
-	a.prints = printqueue.New(context.Background(), a.handlePrintJob, logger)
+	a.prints = printqueue.New(ctx, a.handlePrintJob)
 	a.prober = probe.NewProber(a.probeStore, cfg.ProbeInterval, a.reportProbe, a.hubConnected, logger)
 	return a
 }
@@ -127,6 +127,11 @@ func (a *app) dispatchPrint(msg model.PrintMessage) {
 // handlePrintJob writes one job to its printer and reports the outcome, so
 // the server knows whether the receipt actually printed.
 func (a *app) handlePrintJob(ctx context.Context, msg model.PrintMessage) {
+	if len(msg.PrintInstructions) == 0 {
+		a.logger.Warn("print job without instructions",
+			"printerName", msg.PrinterName, "ip", msg.IPAddress, "port", msg.Port,
+			"jobId", msg.JobID)
+	}
 	err := printer.Print(ctx, msg)
 	if err != nil {
 		a.logger.Error("print failed",
@@ -149,12 +154,13 @@ func (a *app) handlePrintJob(ctx context.Context, msg model.PrintMessage) {
 
 // runScan performs a native network scan and reports start and result to
 // the server, mirroring the old nmap flow (status ping, then full output).
+// It runs under the app context so a shutdown cancels an in-flight scan.
 func (a *app) runScan(msg model.PrintMessage) {
 	logger := a.logger.With("pattern", msg.IPAddress, "port", msg.Port)
 	logger.Info("scan requested")
 	a.hub.ReportScanStarted()
 
-	ctx, cancel := context.WithTimeout(context.Background(), scanTimeout)
+	ctx, cancel := context.WithTimeout(a.ctx, scanTimeout)
 	defer cancel()
 
 	output, err := scan.Run(ctx, msg.IPAddress, msg.Port)

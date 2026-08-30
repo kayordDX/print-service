@@ -9,7 +9,6 @@ package printqueue
 
 import (
 	"context"
-	"log/slog"
 	"net"
 	"strconv"
 	"sync"
@@ -40,7 +39,6 @@ type Handler func(ctx context.Context, msg model.PrintMessage)
 type Queue struct {
 	ctx     context.Context
 	handler Handler
-	logger  *slog.Logger
 	size    int
 	idle    time.Duration
 
@@ -50,11 +48,10 @@ type Queue struct {
 
 // New returns a queue whose workers run under ctx and process jobs with
 // handler. Defaults: DefaultQueueSize per printer, DefaultIdleTimeout.
-func New(ctx context.Context, handler Handler, logger *slog.Logger) *Queue {
+func New(ctx context.Context, handler Handler) *Queue {
 	return &Queue{
 		ctx:     ctx,
 		handler: handler,
-		logger:  logger,
 		size:    DefaultQueueSize,
 		idle:    DefaultIdleTimeout,
 		queues:  make(map[string]chan model.PrintMessage),
@@ -90,7 +87,8 @@ func (q *Queue) Enqueue(msg model.PrintMessage) bool {
 }
 
 // worker processes jobs for one printer until ctx is canceled or the queue
-// has been idle long enough, then removes itself.
+// has been idle long enough, then removes itself. Jobs still queued at
+// shutdown are dropped: printing is fire-and-forget.
 func (q *Queue) worker(key string, ch chan model.PrintMessage) {
 	defer q.remove(key, ch)
 	for {
