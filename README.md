@@ -90,15 +90,15 @@ Pushing a `vX.Y.Z` tag (or running the
 [Release workflow](.github/workflows/release.yaml) manually) builds and
 attaches archives for every platform to the GitHub release:
 
-| Asset                                             | Platform                     |
-|---------------------------------------------------|------------------------------|
-| `print-service-{version}-linux-armv6.tar.gz`      | Pi Zero 1                    |
-| `print-service-{version}-linux-arm64.tar.gz`      | Pi Zero 2 W, Pi 4/5          |
-| `print-service-{version}-linux-amd64.tar.gz`      | x86-64 Linux                 |
-| `print-service-{version}-windows-amd64.zip`       | Windows (64-bit Intel/AMD)   |
-| `print-service-{version}-windows-arm64.zip`       | Windows on ARM               |
-| `print-service-{version}-darwin-amd64.tar.gz`     | macOS (Intel)                |
-| `print-service-{version}-darwin-arm64.tar.gz`     | macOS (Apple Silicon)        |
+| Asset                                         | Platform                   |
+| --------------------------------------------- | -------------------------- |
+| `print-service-{version}-linux-armv6.tar.gz`  | Pi Zero 1                  |
+| `print-service-{version}-linux-arm64.tar.gz`  | Pi Zero 2 W, Pi 4/5        |
+| `print-service-{version}-linux-amd64.tar.gz`  | x86-64 Linux               |
+| `print-service-{version}-windows-amd64.zip`   | Windows (64-bit Intel/AMD) |
+| `print-service-{version}-windows-arm64.zip`   | Windows on ARM             |
+| `print-service-{version}-darwin-amd64.tar.gz` | macOS (Intel)              |
+| `print-service-{version}-darwin-arm64.tar.gz` | macOS (Apple Silicon)      |
 
 ### Windows
 
@@ -139,15 +139,7 @@ the printers directly (raw TCP, port 9100).
      -Trigger $trigger -Settings $settings -User "SYSTEM" -RunLevel Highest
    ```
 
-   Start it right away with `Start-ScheduledTask -TaskName "print-service"`.
-   Alternatively, [NSSM](https://nssm.cc) wraps it as a real Windows service
-   with log capture:
-
-   ```powershell
-   nssm install print-service C:\kayord\print-service.exe
-   nssm set print-service AppEnvironmentExtra POS_BASE_URL=https://api.kayord.com POS_API_KEY=kpos_pk_xxxx.yyyy
-   nssm start print-service
-   ```
+Start it right away with `Start-ScheduledTask -TaskName "print-service"`.
 
 Docker (multi-arch, from `scratch` — the binary is static and needs nothing
 but CA certificates for the outbound HTTPS connection):
