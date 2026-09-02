@@ -34,6 +34,10 @@ type Callbacks struct {
 	// report its platform, network addresses and versions (diagnostics).
 	// The implementation answers by calling Client.ReportDeviceInfo.
 	OnRequestDeviceInfo func()
+	// OnRequestProbe is called when the server asks the device to dial one
+	// printer immediately (admin UI "check now") and report the result.
+	// The implementation must not block the hub receive loop.
+	OnRequestProbe func(printerID int)
 }
 
 // Receiver implements the server -> device hub methods. Method names must
@@ -76,6 +80,17 @@ func (r *Receiver) SyncPrinters(targets []model.PrinterTarget) {
 	}
 	r.logger.Info("printer assignment received", "count", len(targets))
 	r.callbacks.OnSyncPrinters(targets)
+}
+
+// RequestProbe is invoked by the server to have the device dial a single
+// printer right away instead of waiting for the probe interval. The dial
+// and the ReportPrinterProbe answer happen asynchronously.
+func (r *Receiver) RequestProbe(printerID int) {
+	if r.callbacks.OnRequestProbe == nil {
+		return
+	}
+	r.logger.Info("probe requested", "printerId", printerID)
+	r.callbacks.OnRequestProbe(printerID)
 }
 
 // Client wraps the SignalR client with fire-and-forget reporting helpers

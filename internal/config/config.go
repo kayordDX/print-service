@@ -78,6 +78,9 @@ type Config struct {
 	ProbeInterval time.Duration
 }
 
+// DefaultBaseURL is used when POS_BASE_URL is unset.
+const DefaultBaseURL = "https://api.kayord.com"
+
 // DefaultProbeInterval is used when PROBE_INTERVAL_SECONDS is unset.
 const DefaultProbeInterval = 30 * time.Second
 
@@ -91,8 +94,9 @@ func Load(getenv func(string) string) (Config, error) {
 
 	cfg.BaseURL = strings.TrimRight(strings.TrimSpace(getenv("POS_BASE_URL")), "/")
 	if cfg.BaseURL == "" {
-		errs = append(errs, fmt.Errorf("POS_BASE_URL is required (e.g. https://api.kayord.com)"))
-	} else if u, err := url.Parse(cfg.BaseURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		cfg.BaseURL = DefaultBaseURL
+	}
+	if u, err := url.Parse(cfg.BaseURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		errs = append(errs, fmt.Errorf("POS_BASE_URL %q is not a valid http(s) URL", cfg.BaseURL))
 	}
 

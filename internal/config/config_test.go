@@ -115,11 +115,13 @@ func TestLoadAPIKeys(t *testing.T) {
 func TestLoadDefaults(t *testing.T) {
 	t.Parallel()
 	cfg, err := Load(getenvWith(map[string]string{
-		"POS_BASE_URL": "http://localhost:5117",
-		"POS_API_KEY":  "kpos_pk_deadbeef.s3cr3t",
+		"POS_API_KEY": "kpos_pk_deadbeef.s3cr3t",
 	}))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.BaseURL != DefaultBaseURL {
+		t.Errorf("BaseURL = %q, want %q", cfg.BaseURL, DefaultBaseURL)
 	}
 	if cfg.LogLevel != "info" {
 		t.Errorf("LogLevel = %q, want info", cfg.LogLevel)
@@ -139,7 +141,7 @@ func TestLoadErrors(t *testing.T) {
 		{
 			name: "missing everything",
 			env:  map[string]string{},
-			want: "POS_BASE_URL",
+			want: "POS_API_KEY",
 		},
 		{
 			name: "bad url",

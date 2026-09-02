@@ -97,6 +97,7 @@ func newAppForKey(ctx context.Context, cfg config.Config, logger *slog.Logger, s
 		OnPrint:             a.dispatchPrint,
 		OnSyncPrinters:      a.probeStore.Set,
 		OnRequestDeviceInfo: a.reportDeviceInfo,
+		OnRequestProbe:      a.requestProbe,
 	}, keyLogger)
 	if err != nil {
 		return nil, err
@@ -147,6 +148,13 @@ func (a *app) reportDeviceInfo() {
 		"hostname", info.Hostname, "platform", info.Platform,
 		"appVersion", info.AppVersion, "interfaces", len(info.Interfaces))
 	a.hub.ReportDeviceInfo(info)
+}
+
+// requestProbe dials one printer immediately and reports the result. The
+// prober runs the dial on its own goroutine, so the hub receive loop is
+// never blocked by a slow or absent printer.
+func (a *app) requestProbe(printerID int) {
+	a.prober.ProbeNow(a.ctx, printerID)
 }
 
 // dispatchPrint routes one hub message: scans run in their own goroutine so

@@ -30,8 +30,9 @@ type printResult struct {
 }
 
 // testHub mimics Pos.Api's PrinterHub just enough to exercise the wire
-// contract end to end: it sends ReceivePrint/SyncPrinters/RequestDeviceInfo
-// to whoever asks (Ping) and records everything the device reports.
+// contract end to end: it sends ReceivePrint/SyncPrinters/RequestDeviceInfo/
+// RequestProbe to whoever asks (Ping) and records everything the device
+// reports.
 type testHub struct {
 	signalr.Hub
 
@@ -47,11 +48,13 @@ type testHub struct {
 }
 
 // Ping is invoked by the device once it is connected; the hub answers with
-// the print job, printer assignment and a device info request.
+// the print job, printer assignment, a device info request and an on-demand
+// probe request.
 func (h *testHub) Ping() {
 	h.Clients().Caller().Send("ReceivePrint", h.print)
 	h.Clients().Caller().Send("SyncPrinters", h.targets)
 	h.Clients().Caller().Send("RequestDeviceInfo")
+	h.Clients().Caller().Send("RequestProbe", 8)
 }
 
 func (h *testHub) ReportScanStarted() {
@@ -154,10 +157,12 @@ func TestIntegrationRoundTrip(t *testing.T) {
 	prints := make(chan model.PrintMessage, 1)
 	syncs := make(chan []model.PrinterTarget, 1)
 	infoReqs := make(chan struct{}, 1)
+	probeReqs := make(chan int, 1)
 	client, err := New(ctx, baseURL, "kpos_pk_8f3a91c2.supersecret", Callbacks{
 		OnPrint:             func(m model.PrintMessage) { prints <- m },
 		OnSyncPrinters:      func(targets []model.PrinterTarget) { syncs <- targets },
 		OnRequestDeviceInfo: func() { infoReqs <- struct{}{} },
+		OnRequestProbe:      func(printerID int) { probeReqs <- printerID },
 	}, slog.Default())
 	if err != nil {
 		t.Fatalf("New(): %v", err)
@@ -193,6 +198,14 @@ func TestIntegrationRoundTrip(t *testing.T) {
 	case <-infoReqs:
 	case <-ctx.Done():
 		t.Fatal("timed out waiting for RequestDeviceInfo")
+	}
+	select {
+	case got := <-probeReqs:
+		if got != 8 {
+			t.Errorf("RequestProbe delivered %d, want 8", got)
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for RequestProbe")
 	}
 
 	// Device -> server reporting.

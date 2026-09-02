@@ -8,7 +8,9 @@ connects **outbound** to the POS API's SignalR hub (`/printer-hub`), and:
   printers (raw TCP, port 9100),
 - performs network scans **natively** (concurrent TCP dials — no nmap, no
   root), when the server sends a scan request,
-- probes the printers assigned to it and reports reachability live,
+- probes the printers assigned to it and reports reachability live —
+  periodically, plus immediately when the server asks for a single
+  printer ("check now"),
 - answers device info requests with its platform, host name, current IP
   addresses, versions and uptime (diagnostics for the POS admin UI).
 
@@ -33,7 +35,7 @@ contract lives in the pos repo: `docs/Print-service.md` (device side) and
 
 | Env var                  | Required | Default | Meaning                                                                                                                         |
 | ------------------------ | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `POS_BASE_URL`           | yes      | —       | POS API base URL, e.g. `https://api.kayord.com` (no trailing slash)                                                             |
+| `POS_BASE_URL`           | no       | `https://api.kayord.com` | POS API base URL (no trailing slash)                                                     |
 | `POS_API_KEY`            | one of   | —       | `kpos_{keyId}.{secret}` — single-key shorthand; created by an outlet manager in the POS admin UI                                |
 | `POS_API_KEYS`           | one of   | —       | Comma-separated list of `kpos_{keyId}.{secret}` keys — serves multiple outlets from one process; error if both key vars are set |
 | `LOG_LEVEL`              | no       | `info`  | `debug` \| `info` \| `warn` \| `error`                                                                                          |
