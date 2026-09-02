@@ -33,13 +33,13 @@ contract lives in the pos repo: `docs/Print-service.md` (device side) and
 
 ## Configuration
 
-| Env var                  | Required | Default                       | Meaning                                                                                                                         |
-| ------------------------ | -------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `POS_BASE_URL`           | no       | `https://pos-api.kayord.com/` | POS API base URL (no trailing slash)                                                                                            |
-| `POS_API_KEY`            | one of   | —                             | `kpos_{keyId}.{secret}` — single-key shorthand; created by an outlet manager in the POS admin UI                                |
-| `POS_API_KEYS`           | one of   | —                             | Comma-separated list of `kpos_{keyId}.{secret}` keys — serves multiple outlets from one process; error if both key vars are set |
-| `LOG_LEVEL`              | no       | `info`                        | `debug` \| `info` \| `warn` \| `error`                                                                                          |
-| `PROBE_INTERVAL_SECONDS` | no       | `30`                          | Printer reachability probe interval                                                                                             |
+| Env var                  | Required | Default                      | Meaning                                                                                                                         |
+| ------------------------ | -------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `POS_BASE_URL`           | no       | `https://pos-api.kayord.com` | POS API base URL (no trailing slash)                                                                                            |
+| `POS_API_KEY`            | one of   | —                            | `kpos_{keyId}.{secret}` — single-key shorthand; created by an outlet manager in the POS admin UI                                |
+| `POS_API_KEYS`           | one of   | —                            | Comma-separated list of `kpos_{keyId}.{secret}` keys — serves multiple outlets from one process; error if both key vars are set |
+| `LOG_LEVEL`              | no       | `info`                       | `debug` \| `info` \| `warn` \| `error`                                                                                          |
+| `PROBE_INTERVAL_SECONDS` | no       | `30`                         | Printer reachability probe interval                                                                                             |
 
 One of `POS_API_KEY` or `POS_API_KEYS` is required. With `POS_API_KEYS` the
 process runs one fully independent app instance per key — its own hub
@@ -129,7 +129,7 @@ the printers directly (raw TCP, port 9100).
 2. Try it in PowerShell to confirm it connects:
 
    ```powershell
-   $env:POS_BASE_URL = "https://pos-api.kayord.com/"
+   $env:POS_BASE_URL = "https://pos-api.kayord.com"
    $env:POS_API_KEY  = "kpos_pk_xxxx.yyyy"   # create in the POS admin UI
    .\print-service.exe
    ```
@@ -145,7 +145,7 @@ the printers directly (raw TCP, port 9100).
    ```powershell
    # Machine-wide env vars, read by the program at start-up. They are
    # visible to local users — keep POS_API_KEY on a restricted machine.
-   [Environment]::SetEnvironmentVariable("POS_BASE_URL", "https://pos-api.kayord.com/", "Machine")
+   [Environment]::SetEnvironmentVariable("POS_BASE_URL", "https://pos-api.kayord.com", "Machine")
    [Environment]::SetEnvironmentVariable("POS_API_KEY",  "kpos_pk_xxxx.yyyy", "Machine")
 
    $action   = New-ScheduledTaskAction -Execute "C:\kayord\print-service.exe"
@@ -175,7 +175,7 @@ Description=Kayord print service
 After=network-online.target
 
 [Service]
-Environment=POS_BASE_URL=https://pos-api.kayord.com/
+Environment=POS_BASE_URL=https://pos-api.kayord.com
 EnvironmentFile=-/etc/kayord/print-service.env   # POS_API_KEY lives here, chmod 600
 ExecStart=/usr/local/bin/print-service
 Restart=always
@@ -193,7 +193,7 @@ services:
   print-service:
     image: ghcr.io/kayorddx/print-service:latest
     environment:
-      POS_BASE_URL: https://pos-api.kayord.com/
+      POS_BASE_URL: https://pos-api.kayord.com
       POS_API_KEY: kpos_pk_xxxx.yyyy # create in POS admin UI
     restart: unless-stopped
 ```

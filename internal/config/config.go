@@ -63,7 +63,7 @@ func mask(s string) string {
 // Config is the validated service configuration.
 type Config struct {
 	// BaseURL is the POS API base URL without a trailing slash,
-	// e.g. "https://pos-api.kayord.com/".
+	// e.g. "https://pos-api.kayord.com".
 	BaseURL string
 
 	// APIKeys authenticates the app instances against the POS API, one per
@@ -79,7 +79,7 @@ type Config struct {
 }
 
 // DefaultBaseURL is used when POS_BASE_URL is unset.
-const DefaultBaseURL = "https://pos-api.kayord.com/"
+const DefaultBaseURL = "https://pos-api.kayord.com"
 
 // DefaultProbeInterval is used when PROBE_INTERVAL_SECONDS is unset.
 const DefaultProbeInterval = 30 * time.Second

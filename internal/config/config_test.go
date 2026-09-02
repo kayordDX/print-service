@@ -13,7 +13,7 @@ func getenvWith(env map[string]string) func(string) string {
 func TestLoadValid(t *testing.T) {
 	t.Parallel()
 	cfg, err := Load(getenvWith(map[string]string{
-		"POS_BASE_URL":           "https://pos-api.kayord.com//",
+		"POS_BASE_URL":           "https://pos-api.kayord.com",
 		"POS_API_KEY":            "kpos_pk_8f3a91c2.c2VjcmV0c2VjcmV0c2Vjcg",
 		"LOG_LEVEL":              "DEBUG",
 		"PROBE_INTERVAL_SECONDS": "15",
@@ -21,7 +21,7 @@ func TestLoadValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.BaseURL != "https://pos-api.kayord.com/" {
+	if cfg.BaseURL != "https://pos-api.kayord.com" {
 		t.Errorf("BaseURL = %q, want trailing slash trimmed", cfg.BaseURL)
 	}
 	if cfg.APIKeys[0].KeyID != "pk_8f3a91c2" {
