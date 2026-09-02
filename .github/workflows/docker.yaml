@@ -1,9 +1,8 @@
 name: Docker
 on:
   push:
-    branches:
-      - 'main'
-      - 'releases/**'
+    tags:
+      - "v*"
   workflow_dispatch:
 
 jobs:
