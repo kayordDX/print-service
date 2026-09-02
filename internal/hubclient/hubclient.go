@@ -120,6 +120,10 @@ func New(ctx context.Context, baseURL, apiKey string, callbacks Callbacks, logge
 	client, err := signalr.NewClient(ctx,
 		signalr.WithConnector(connect),
 		signalr.WithReceiver(&Receiver{callbacks: callbacks, logger: logger}),
+		// Route the library's own logging through slog so protocol trace
+		// lines respect LOG_LEVEL instead of the library's debug-always
+		// default on stderr.
+		signalr.Logger(signalrLogger{logger: logger}, true),
 		// An unattended device must never give up: an invalid key at
 		// startup, API restarts or network loss all retry with backoff.
 		// MaxElapsedTime=0 disables the default 15-minute give-up.

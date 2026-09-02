@@ -188,10 +188,16 @@ WantedBy=multi-user.target
 
 ### Compose
 
+`network_mode: host` shares the host's network stack so device info reports
+the real LAN interfaces and scan/probe reach the LAN directly. Without it the
+container sees only the Docker bridge, and scanning ends up covering the
+bridge subnet instead of the LAN. Linux only (fine on a Pi).
+
 ```yaml
 services:
   print-service:
     image: ghcr.io/kayorddx/print-service:latest
+    network_mode: host
     environment:
       POS_BASE_URL: https://pos-api.kayord.com
       POS_API_KEY: kpos_pk_xxxx.yyyy # create in POS admin UI
